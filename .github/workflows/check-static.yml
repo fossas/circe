@@ -1,0 +1,13 @@
+name: static
+
+on: pull_request
+
+jobs:
+  check-static:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+
+    - run: cargo fmt --all -- --check
+    - run: cargo clippy --all-features --all --tests -- -D clippy::all

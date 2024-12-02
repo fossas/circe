@@ -1,0 +1,32 @@
+name: dynamic
+on: pull_request
+
+jobs:
+  check-build:
+    strategy:
+      matrix:
+        settings:
+        - host: windows-latest
+          setup: echo "no setup"
+          build: cargo build
+        - host: ubuntu-latest
+          setup: echo "no setup"
+          build: cargo build
+        - host: macos-latest
+          setup: rustup target add aarch64-apple-darwin
+          build: cargo build --target aarch64-apple-darwin && cargo build --target x86_64-apple-darwin
+
+    runs-on: ${{ matrix.settings.host }}
+    name: test / ${{ matrix.settings.host }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: taiki-e/install-action@nextest
+    - uses: Swatinem/rust-cache@v2.7.2
+      with:
+        key: ${{ matrix.settings.host }}
+    - run: ${{ matrix.settings.setup }}
+    - run: ${{ matrix.settings.build }}
+    - run: cargo check --release --all --bins --examples --tests
+    - run: cargo nextest run --all-targets
+    - run: cargo test --doc

@@ -1,0 +1,18 @@
+name: dependencies
+on: push
+
+jobs:
+  check-fossa:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - run: "curl -H 'Cache-Control: no-cache' https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.sh | bash"
+
+    - run: fossa analyze --only-target cargo .
+      env:
+        FOSSA_API_KEY: ${{ secrets.FOSSA_API_KEY }}
+
+    - run: fossa test
+      env:
+        FOSSA_API_KEY: ${{ secrets.FOSSA_API_KEY }}
