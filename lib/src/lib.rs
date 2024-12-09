@@ -1,3 +1,5 @@
+//! Core library for `circe`, a tool for extracting OCI images.
+
 use bon::Builder;
 use color_eyre::{
     eyre::{self, eyre},
@@ -5,6 +7,8 @@ use color_eyre::{
 };
 use std::str::FromStr;
 use tap::Pipe;
+
+pub mod registry;
 
 /// Platform represents the platform a container image is built for.
 /// This follows the OCI Image Spec's platform definition while also supporting

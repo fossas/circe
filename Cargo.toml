@@ -1,29 +1,7 @@
-[package]
-name = "circe"
-version = "0.1.0"
-edition = "2021"
-authors = ["Jessica Black <me@jessica.black>"]
-description = "Extracts and examines the contents of containers"
-license = "MPL-2.0"
-repository = "https://github.com/fossas/circe"
-homepage = "https://github.com/fossas/circe"
-documentation = "https://docs.rs/circe"
-readme = "README.md"
-keywords = ["cli", "dependencies", "containers", "images", "oci"]
-categories = ["command-line-utilities", "development-tools"]
+[workspace]
+members = ["bin", "lib"]
+resolver = "2"
 
-[dependencies]
-bon = "3.3.0"
-clap = { version = "4.5.23", features = ["derive"] }
-color-eyre = "0.6.3"
-tap = "1.0.1"
-tokio = { version = "1.42.0", features = ["full"] }
-tracing = "0.1.41"
-tracing-error = "0.2.1"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-tracing-tree = "0.4.0"
-
-[dev-dependencies]
-pretty_assertions = "1.4.1"
-proptest = "1.5.0"
-simple_test_case = "1.2.0"
+[profile.release]
+strip = true
+lto = "fat"

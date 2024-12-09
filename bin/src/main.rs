@@ -3,7 +3,7 @@ use color_eyre::eyre::Result;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{self, prelude::*};
 
-mod cmd;
+mod cmd_extract;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about)]
@@ -15,7 +15,7 @@ struct Cli {
 #[derive(Debug, Parser)]
 enum Commands {
     /// Extract OCI image to a directory
-    Extract(cmd::extract::Options),
+    Extract(cmd_extract::Options),
 }
 
 #[tokio::main]
@@ -42,9 +42,9 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let cli = Cli::try_parse()?;
+    let cli = Cli::parse();
     match cli.command {
-        Commands::Extract(opts) => cmd::extract::main(opts).await?,
+        Commands::Extract(opts) => cmd_extract::main(opts).await?,
     }
 
     Ok(())

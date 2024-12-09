@@ -1,0 +1,25 @@
+[package]
+name = "circe"
+version = "0.1.0"
+edition = "2021"
+authors = ["Jessica Black <me@jessica.black>", "FOSSA Inc. <support@fossa.com>"]
+description = "Extracts and examines the contents of containers"
+license = "MPL-2.0"
+repository = "https://github.com/fossas/circe"
+homepage = "https://github.com/fossas/circe"
+documentation = "https://docs.rs/circe"
+readme = "README.md"
+keywords = ["cli", "dependencies", "containers", "images", "oci"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+bon = "3.3.0"
+color-eyre = "0.6.3"
+oci-client = "0.14.0"
+tap = "1.0.1"
+tracing = "0.1.41"
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"
+proptest = "1.5.0"
+simple_test_case = "1.2.0"
