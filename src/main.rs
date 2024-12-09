@@ -15,7 +15,7 @@ struct Cli {
 #[derive(Debug, Parser)]
 enum Commands {
     /// Extract OCI image to a directory
-    Extract(cmd::extract::Args),
+    Extract(cmd::extract::Options),
 }
 
 #[tokio::main]
@@ -27,10 +27,12 @@ async fn main() -> Result<()> {
             tracing_tree::HierarchicalLayer::default()
                 .with_indent_lines(true)
                 .with_indent_amount(2)
-                .with_thread_names(true)
                 .with_thread_ids(true)
                 .with_verbose_exit(false)
                 .with_verbose_entry(false)
+                .with_deferred_spans(true)
+                .with_bracketed_fields(true)
+                .with_span_retrace(true)
                 .with_targets(true),
         )
         .with(
@@ -42,7 +44,7 @@ async fn main() -> Result<()> {
 
     let cli = Cli::try_parse()?;
     match cli.command {
-        Commands::Extract(args) => cmd::extract::main(args).await?,
+        Commands::Extract(opts) => cmd::extract::main(opts).await?,
     }
 
     Ok(())

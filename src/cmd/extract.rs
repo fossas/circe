@@ -1,16 +1,17 @@
 use circe::{Platform, Reference};
 use clap::{Parser, ValueEnum};
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{Context, Result};
 use std::{path::PathBuf, str::FromStr};
+use tracing::info;
 
 #[derive(Debug, Parser)]
-pub struct Args {
+pub struct Options {
     /// Image reference being extracted (e.g. docker.io/library/ubuntu:latest)
     #[arg(value_parser = Reference::from_str)]
     image: Reference,
 
     /// Directory to which the extracted contents will be written
-    #[arg(default_value = ".")]
+    #[arg(default_value = ".", value_parser = canonicalize)]
     output_dir: PathBuf,
 
     /// Platform to extract (e.g. linux/amd64)
@@ -44,24 +45,15 @@ pub enum Mode {
     /// as if the container was actually booted.
     #[default]
     Squash,
-
-    /// Extract each layer separately
-    ///
-    /// In this mode, each layer will have its own subdirectory in the output directory.
-    /// A `layers.json` file will be written to the output directory to describe the order of layers.
-    Separate,
 }
 
-pub async fn main(args: Args) -> Result<()> {
-    let output_dir = std::fs::canonicalize(args.output_dir)?;
-
-    tracing::info!(
-        "Would extract image {} to {} for platform {:?} with layer mode {:?}",
-        args.image,
-        output_dir.display(),
-        args.platform,
-        args.mode
-    );
+#[tracing::instrument]
+pub async fn main(opts: Options) -> Result<()> {
+    info!("Extracting image");
 
     Ok(())
+}
+
+fn canonicalize(path: &str) -> Result<PathBuf> {
+    std::fs::canonicalize(path).context("canonicalize path")
 }
