@@ -2,9 +2,10 @@
 
 use bon::Builder;
 use color_eyre::{
-    eyre::{self, eyre},
-    Section, SectionExt,
+    eyre::{self, bail, eyre, Context},
+    Result, Section, SectionExt,
 };
+use derive_more::derive::Display;
 use std::str::FromStr;
 use tap::Pipe;
 
@@ -13,6 +14,13 @@ pub mod registry;
 /// Platform represents the platform a container image is built for.
 /// This follows the OCI Image Spec's platform definition while also supporting
 /// Docker's platform string format (e.g. "linux/amd64").
+///
+/// ```
+/// # use circe::Platform;
+/// # use std::str::FromStr;
+/// let platform = Platform::from_str("linux/amd64").expect("parse platform");
+/// assert_eq!(platform.to_string(), "linux/amd64");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Builder)]
 pub struct Platform {
     /// Operating system the container runs on (e.g. "linux", "windows", "darwin").
@@ -175,7 +183,196 @@ impl std::fmt::Display for Platform {
     }
 }
 
-/// A parsed container image reference of the form host/repository:tag or host/repository@sha256:digest
+/// Create a [`Digest`] from a hex string at compile time.
+/// ```
+/// let digest = circe::digest!("sha256", "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
+/// assert_eq!(digest.algorithm, "sha256");
+/// assert_eq!(digest.as_hex(), "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
+/// ```
+///
+/// If algorithm is not provided, it defaults to [`Digest::SHA256`].
+/// ```
+/// let digest = circe::digest!("a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
+/// assert_eq!(digest.algorithm, "sha256");
+/// assert_eq!(digest.as_hex(), "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
+/// ```
+///
+/// This macro currently assumes that the hash is 32 bytes long.
+/// Providing a value of a different length will result in a compile-time error.
+/// ```compile_fail
+/// let digest = circe::digest!("a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4deadbeef");
+/// ```
+///
+/// You can work around this by providing the size of the hash as a third argument.
+/// ```
+/// let digest = circe::digest!(circe::Digest::SHA256, "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4deadbeef", 36);
+/// assert_eq!(digest.algorithm, "sha256");
+/// assert_eq!(digest.as_hex(), "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4deadbeef");
+/// ```
+#[macro_export]
+macro_rules! digest {
+    ($hex:expr) => {{
+        circe::digest!(circe::Digest::SHA256, $hex, 32)
+    }};
+    ($algorithm:expr, $hex:expr) => {{
+        circe::digest!($algorithm, $hex, 32)
+    }};
+    ($algorithm:expr, $hex:expr, $size:expr) => {{
+        const hash: [u8; $size] = hex_magic::hex!($hex);
+        static_assertions::const_assert_ne!(hash.len(), 0);
+        static_assertions::const_assert_ne!($algorithm.len(), 0);
+        circe::Digest {
+            algorithm: $algorithm.to_string(),
+            hash: hash.to_vec(),
+        }
+    }};
+}
+
+/// A content-addressable digest in the format `algorithm:hash`.
+///
+/// The `FromStr` implementation parses the format used in OCI containers by default,
+/// which is `algorithm:hex`.
+///
+/// ```
+/// # use std::str::FromStr;
+/// let digest = circe::Digest::from_str("sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4").expect("parse digest");
+/// assert_eq!(digest.algorithm, "sha256");
+/// assert_eq!(digest.as_hex(), "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Digest {
+    /// The hashing algorithm used (e.g. "sha256")
+    pub algorithm: String,
+
+    /// The raw hash bytes
+    pub hash: Vec<u8>,
+}
+
+impl Digest {
+    /// The SHA256 algorithm
+    pub const SHA256: &'static str = "sha256";
+
+    /// Returns the hash as a hex string
+    pub fn as_hex(&self) -> String {
+        hex::encode(&self.hash)
+    }
+}
+
+impl FromStr for Digest {
+    type Err = color_eyre::Report;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let input_section = || s.to_string().header("Input:");
+        let (algorithm, hex) = s.split_once(':').ok_or_else(|| {
+            eyre!("invalid digest format: missing algorithm separator ':'")
+                .with_section(input_section)
+        })?;
+
+        if algorithm.is_empty() {
+            bail!("algorithm cannot be empty");
+        }
+        if hex.is_empty() {
+            bail!("hex cannot be empty");
+        }
+
+        Ok(Self {
+            algorithm: algorithm.to_string(),
+            hash: hex::decode(hex).map_err(|e| eyre!("invalid hex string: {e}"))?,
+        })
+    }
+}
+
+impl std::fmt::Display for Digest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.algorithm, self.as_hex())
+    }
+}
+
+impl From<&Digest> for Digest {
+    fn from(digest: &Digest) -> Self {
+        digest.clone()
+    }
+}
+
+/// Version identifier for a container image.
+///
+/// This can be a named tag or a SHA256 digest.
+///
+/// ```
+/// # use circe::{Version, Digest};
+/// # use std::str::FromStr;
+/// assert_eq!(Version::latest().to_string(), "latest");
+/// assert_eq!(Version::tag("other").to_string(), "other");
+///
+/// let digest = Digest::from_str("sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4").expect("parse digest");
+/// assert_eq!(Version::digest(digest).to_string(), "sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Display)]
+pub enum Version {
+    /// A named tag (e.g. "latest", "1.0.0")
+    Tag(String),
+
+    /// A SHA256 digest (e.g. "sha256:123abc...")
+    Digest(Digest),
+}
+
+impl Version {
+    /// Returns the tag for "latest".
+    ///
+    /// ```
+    /// # use circe::Version;
+    /// assert_eq!(Version::latest().to_string(), "latest");
+    /// ```
+    pub fn latest() -> Self {
+        Self::Tag(String::from("latest"))
+    }
+
+    /// Create a tagged instance.
+    ///
+    /// ```
+    /// # use circe::Version;
+    /// assert_eq!(Version::tag("latest").to_string(), "latest");
+    /// ```
+    pub fn tag(tag: &str) -> Self {
+        Self::Tag(tag.to_string())
+    }
+
+    /// Create a digest instance.
+    ///
+    /// ```
+    /// # use circe::Version;
+    /// let digest = circe::digest!("sha256", "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
+    /// let version = Version::digest(digest);
+    /// assert_eq!(version.to_string(), "sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
+    /// ```
+    pub fn digest(digest: Digest) -> Self {
+        Self::Digest(digest)
+    }
+}
+
+/// A parsed container image reference.
+///
+/// ```
+/// # use circe::{Reference, Version};
+/// # use std::str::FromStr;
+/// // Default to latest tag
+/// let reference = Reference::from_str("docker.io/library/ubuntu").expect("parse reference");
+/// assert_eq!(reference.host, "docker.io");
+/// assert_eq!(reference.repository, "library/ubuntu");
+/// assert_eq!(reference.version, Version::tag("latest"));
+///
+/// // Parse a tag
+/// let reference = Reference::from_str("docker.io/library/ubuntu:other").expect("parse reference");
+/// assert_eq!(reference.host, "docker.io");
+/// assert_eq!(reference.repository, "library/ubuntu");
+/// assert_eq!(reference.version, Version::tag("other"));
+///
+/// // Parse a digest
+/// let reference = Reference::from_str("docker.io/library/ubuntu@sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4").expect("parse reference");
+/// assert_eq!(reference.host, "docker.io");
+/// assert_eq!(reference.repository, "library/ubuntu");
+/// assert_eq!(reference.version.to_string(), "sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Builder)]
 pub struct Reference {
     /// Registry host (e.g. "docker.io", "ghcr.io")
@@ -201,38 +398,14 @@ impl<S: reference_builder::State> ReferenceBuilder<S> {
     }
 
     /// Set the reference to a digest version.
-    pub fn digest(self, digest: &str) -> ReferenceBuilder<reference_builder::SetVersion<S>>
+    pub fn digest(
+        self,
+        digest: impl Into<Digest>,
+    ) -> ReferenceBuilder<reference_builder::SetVersion<S>>
     where
         S::Version: reference_builder::IsUnset,
     {
-        self.version(Version::digest(digest))
-    }
-}
-
-/// Version identifier for a container image
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Version {
-    /// A named tag (e.g. "latest", "1.0.0")
-    Tag(String),
-
-    /// A SHA256 digest (e.g. "sha256:123abc...")
-    Digest(String),
-}
-
-impl Version {
-    /// Returns the tag for "latest".
-    pub fn latest() -> Self {
-        Self::Tag(String::from("latest"))
-    }
-
-    /// Create a tagged instance.
-    pub fn tag(tag: &str) -> Self {
-        Self::Tag(tag.to_string())
-    }
-
-    /// Create a digest instance.
-    pub fn digest(digest: &str) -> Self {
-        Self::Digest(digest.to_string())
+        self.version(Version::Digest(digest.into()))
     }
 }
 
@@ -248,7 +421,8 @@ impl FromStr for Reference {
         // Find either ':' for tag or '@' for digest.
         // Check for '@' first since digest identifiers also contain ':'.
         let (repository, version) = if let Some((repo, digest)) = remainder.split_once('@') {
-            (repo, Version::Digest(digest.to_string()))
+            let digest = Digest::from_str(digest).context("parse digest")?;
+            (repo, Version::Digest(digest))
         } else if let Some((repo, tag)) = remainder.split_once(':') {
             (repo, Version::Tag(tag.to_string()))
         } else {
@@ -277,5 +451,47 @@ impl std::fmt::Display for Reference {
             Version::Tag(tag) => write!(f, ":{}", tag),
             Version::Digest(digest) => write!(f, "@{}", digest),
         }
+    }
+}
+
+/// A reference to a specific layer within an OCI container image.
+/// This follows the OCI Image Spec's layer descriptor format.
+#[derive(Debug, Clone, PartialEq, Eq, Builder)]
+pub struct LayerReference {
+    /// The content-addressable digest of the layer
+    #[builder(into)]
+    pub digest: Digest,
+}
+
+impl FromStr for LayerReference {
+    type Err = color_eyre::Report;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let digest = Digest::from_str(s).context("parse digest")?;
+        Ok(Self { digest })
+    }
+}
+
+impl From<&LayerReference> for LayerReference {
+    fn from(layer: &LayerReference) -> Self {
+        layer.clone()
+    }
+}
+
+impl From<&Digest> for LayerReference {
+    fn from(digest: &Digest) -> Self {
+        digest.clone().into()
+    }
+}
+
+impl From<Digest> for LayerReference {
+    fn from(digest: Digest) -> Self {
+        Self { digest }
+    }
+}
+
+impl std::fmt::Display for LayerReference {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.digest)
     }
 }

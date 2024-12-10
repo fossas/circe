@@ -15,7 +15,11 @@ categories = ["command-line-utilities", "development-tools"]
 [dependencies]
 bon = "3.3.0"
 color-eyre = "0.6.3"
+derive_more = { version = "1.0.0", features = ["full"] }
+hex = "0.4.3"
+hex-magic = "0.0.2"
 oci-client = "0.14.0"
+static_assertions = "1.1.0"
 tap = "1.0.1"
 tracing = "0.1.41"
 
