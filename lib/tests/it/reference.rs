@@ -1,9 +1,9 @@
-use circe::Reference;
+use circe::{Digest, Reference};
 use proptest::prelude::*;
 use simple_test_case::test_case;
 
 #[test_case("docker.io/library/ubuntu:latest", Reference::builder().host("docker.io").repository("library/ubuntu").tag("latest").build(); "docker.io/library/ubuntu:latest")]
-#[test_case("ghcr.io/user/repo@sha256:123abc", Reference::builder().host("ghcr.io").repository("user/repo").digest("sha256:123abc").build(); "ghcr.io/user/repo@sha256:123abc")]
+#[test_case("ghcr.io/user/repo@sha256:123abc", Reference::builder().host("ghcr.io").repository("user/repo").digest(circe::digest!("sha256", "123abc", 3)).build(); "ghcr.io/user/repo@sha256:123abc")]
 #[test_case("docker.io/library/ubuntu", Reference::builder().host("docker.io").repository("library/ubuntu").build(); "docker.io/library/ubuntu")]
 #[test]
 fn parse(input: &str, expected: Reference) {
@@ -12,7 +12,7 @@ fn parse(input: &str, expected: Reference) {
 }
 
 #[test_case(Reference::builder().host("docker.io").repository("library/ubuntu").tag("latest").build(), "docker.io/library/ubuntu:latest"; "docker.io/library/ubuntu:latest")]
-#[test_case(Reference::builder().host("ghcr.io").repository("user/repo").digest("sha256:123abc").build(), "ghcr.io/user/repo@sha256:123abc"; "ghcr.io/user/repo@sha256:123abc")]
+#[test_case(Reference::builder().host("ghcr.io").repository("user/repo").digest(circe::digest!("sha256", "123abc", 3)).build(), "ghcr.io/user/repo@sha256:123abc"; "ghcr.io/user/repo@sha256:123abc")]
 #[test_case(Reference::builder().host("docker.io").repository("library/ubuntu").build(), "docker.io/library/ubuntu:latest"; "docker.io/library/ubuntu")]
 #[test]
 fn display(reference: Reference, expected: &str) {
@@ -60,7 +60,9 @@ fn reference_strategy() -> impl Strategy<Value = Reference> {
         repository_strategy(),
         prop_oneof![
             tag_strategy().prop_map(circe::Version::Tag),
-            digest_strategy().prop_map(circe::Version::Digest)
+            digest_strategy().prop_map(|digest| {
+                circe::Version::Digest(digest.parse::<Digest>().expect("parse digest"))
+            })
         ],
     )
         .prop_map(|(host, repository, version)| Reference {

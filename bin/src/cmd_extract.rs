@@ -22,13 +22,15 @@ pub struct Options {
     /// If the image is multi-platform and this argument is not provided,
     /// the platform is chosen according to the following priority list:
     ///
-    /// 1. The current platform (if available)
+    /// 1. The first platform-independent image
     ///
-    /// 2. The `linux` platform for the current architecture
+    /// 2. The current platform (if available)
     ///
-    /// 3. The `linux` platform for the `amd64` architecture
+    /// 3. The `linux` platform for the current architecture
     ///
-    /// 4. The first platform in the image manifest
+    /// 4. The `linux` platform for the `amd64` architecture
+    ///
+    /// 5. The first platform in the image manifest
     #[arg(long, value_parser = Platform::from_str)]
     platform: Option<Platform>,
 

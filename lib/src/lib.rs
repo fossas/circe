@@ -9,6 +9,7 @@ use derive_more::derive::Display;
 use std::str::FromStr;
 use tap::Pipe;
 
+mod ext;
 pub mod registry;
 
 /// Platform represents the platform a container image is built for.
@@ -218,12 +219,12 @@ macro_rules! digest {
         circe::digest!($algorithm, $hex, 32)
     }};
     ($algorithm:expr, $hex:expr, $size:expr) => {{
-        const hash: [u8; $size] = hex_magic::hex!($hex);
-        static_assertions::const_assert_ne!(hash.len(), 0);
+        const HASH: [u8; $size] = hex_magic::hex!($hex);
+        static_assertions::const_assert_ne!(HASH.len(), 0);
         static_assertions::const_assert_ne!($algorithm.len(), 0);
         circe::Digest {
             algorithm: $algorithm.to_string(),
-            hash: hash.to_vec(),
+            hash: HASH.to_vec(),
         }
     }};
 }
