@@ -8,8 +8,6 @@ use simple_test_case::test_case;
 async fn single_platform_layers(image: &str, platform: Option<Platform>) -> Result<()> {
     let reference = image.parse::<Reference>()?;
     let layers = circe::registry::layers(platform.as_ref(), &reference).await?;
-
-    // Verify we got some layers back
     assert!(!layers.is_empty(), "image should have at least one layer");
     Ok(())
 }
@@ -20,8 +18,6 @@ async fn single_platform_layers(image: &str, platform: Option<Platform>) -> Resu
 async fn multi_platform_layers(image: &str, platform: Platform) -> Result<()> {
     let reference = image.parse::<Reference>()?;
     let layers = circe::registry::layers(Some(&platform), &reference).await?;
-
-    // Verify we got some layers back
     assert!(!layers.is_empty(), "image should have at least one layer");
     Ok(())
 }
