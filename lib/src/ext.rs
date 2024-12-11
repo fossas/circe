@@ -58,3 +58,34 @@ fn priority_find<T, F: Fn(&T) -> usize>(
         })
         .map(|(_, item)| item)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn priority_find_basic() {
+        let items = vec!["a", "b", "c", "d", "e"];
+        let result = priority_find(items, |item| match *item {
+            "a" => 2,
+            "b" => 1,
+            "d" => 0,
+            _ => 3,
+        });
+        assert_eq!(result, Some("d"));
+    }
+
+    #[test]
+    fn priority_find_all_zero() {
+        let items = vec!["a", "b", "c", "d", "e"];
+        let result = priority_find(items, |_| 0);
+        assert_eq!(result, Some("a"));
+    }
+
+    #[test]
+    fn priority_find_empty() {
+        let items = Vec::<&str>::new();
+        let result = priority_find(items, |_| 0);
+        assert_eq!(result, None);
+    }
+}

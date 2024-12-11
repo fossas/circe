@@ -26,6 +26,7 @@ hex = "0.4.3"
 hex-magic = "0.0.2"
 itertools = "0.13.0"
 oci-client = "0.14.0"
+os_str_bytes = "7.0.0"
 static_assertions = "1.1.0"
 strum = { version = "0.26.3", features = ["derive"] }
 tap = "1.0.1"

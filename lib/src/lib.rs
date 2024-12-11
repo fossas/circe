@@ -5,7 +5,7 @@ use color_eyre::{
     eyre::{self, bail, eyre, Context},
     Result, Section, SectionExt,
 };
-use derive_more::derive::Display;
+use derive_more::derive::{Debug, Display};
 use itertools::Itertools;
 use std::str::FromStr;
 use strum::{AsRefStr, EnumIter, IntoEnumIterator};
@@ -244,6 +244,7 @@ macro_rules! digest {
 /// assert_eq!(digest.as_hex(), "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[debug("{}", self.to_string())]
 pub struct Digest {
     /// The hashing algorithm used (e.g. "sha256")
     pub algorithm: String,

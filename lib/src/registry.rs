@@ -1,6 +1,9 @@
 //! Interacts with remote OCI registries.
 
-use std::{path::Path, str::FromStr};
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use bytes::Bytes;
 use color_eyre::eyre::{Context, Result};
@@ -12,9 +15,10 @@ use oci_client::{
     secrets::RegistryAuth,
     Client, Reference as OciReference, RegistryOperation,
 };
+use os_str_bytes::OsStrBytesExt;
 use tokio_tar::Archive;
 use tokio_util::io::StreamReader;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     ext::PriorityFind,
@@ -147,12 +151,14 @@ impl Registry {
     /// - A file is added.
     /// - A file is removed.
     /// - A file is modified.
+    ///
+    /// More information: https://github.com/opencontainers/image-spec/blob/main/layer.md
     //
     // A future improvement would be to support downloading layers concurrently,
     // then still applying them serially. Since network transfer is the slowest part of this process,
     // this would speed up the overall process.
-    #[tracing::instrument]
-    pub async fn apply_layer(&self, layer: &LayerDescriptor, _path: &Path) -> Result<()> {
+    // #[tracing::instrument]
+    pub async fn apply_layer(&self, layer: &LayerDescriptor, output: &Path) -> Result<()> {
         let stream = self.pull_layer_internal(layer).await?;
 
         /// Unwrap a value, logging an error and continuing the loop if it fails.
@@ -195,10 +201,38 @@ impl Registry {
                 let reader = StreamReader::new(stream);
                 let mut archive = Archive::new(reader);
                 let mut entries = archive.entries().context("read entries from tar")?;
+
+                // Future improvement: the OCI spec guarantees that paths will not repeat within the same layer,
+                // so we could concurrently read files and apply them to disk.
+                // The overall archive is streaming so we'd need to buffer the entries,
+                // but assuming disk is the bottleneck this might speed up the process significantly.
+                // We could also of course write the tar to disk and then extract it concurrently
+                // without buffering- maybe we could read the tar entries while streaming to disk,
+                // and then divide them among workers that apply them to disk concurrently?
                 while let Some(entry) = entries.next().await {
-                    let entry = unwrap_warn!(entry, "read entry");
-                    let path = unwrap_warn!(entry.path(), "read path");
-                    info!(?path, "read entry");
+                    let mut entry = unwrap_warn!(entry, "read entry");
+                    let path = unwrap_warn!(entry.path(), "read entry path");
+
+                    // Paths inside the container are relative to the root of the container;
+                    // we need to convert them to be relative to the output directory.
+                    let path = output.join(path);
+
+                    // Whiteout files delete the file from the filesystem.
+                    if let Some(path) = is_whiteout(&path) {
+                        unwrap_warn!(tokio::fs::remove_file(&path).await, "whiteout: {path:?}");
+                        info!(?path, "whiteout");
+                        continue;
+                    }
+
+                    // Otherwise, apply the file as normal.
+                    // Both _new_ and _changed_ files are handled the same way:
+                    // the layer contains the entire file content, so we just overwrite the file.
+                    if !unwrap_warn!(entry.unpack_in(output).await, "unpack {path:?}") {
+                        warn!(?path, "skip: tried to write outside of output directory");
+                        continue;
+                    }
+
+                    info!(?path, "apply");
                 }
 
                 Ok(())
@@ -254,6 +288,20 @@ impl TryFrom<OciDescriptor> for LayerDescriptor {
             size: value.size,
         })
     }
+}
+
+/// Returns the path to the file that would be deleted by a whiteout file, if the path is a whiteout file.
+/// If the path is not a whiteout file, returns `None`.
+fn is_whiteout(path: &Path) -> Option<PathBuf> {
+    const WHITEOUT_PREFIX: &str = ".wh.";
+
+    // If the file doesn't have a name, it's not a whiteout file.
+    // Similarly if it doesn't have the prefix, it's also not a whiteout file.
+    let name = path.file_name()?.strip_prefix(WHITEOUT_PREFIX)?;
+    Some(match path.parent() {
+        Some(parent) => PathBuf::from(parent).join(name),
+        None => PathBuf::from(name),
+    })
 }
 
 fn client(platform: Option<Platform>) -> Client {
@@ -326,5 +374,19 @@ const fn go_arch() -> &'static str {
     #[cfg(target_arch = "aarch64")]
     {
         "arm64"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_whiteout() {
+        assert_eq!(is_whiteout(Path::new("foo")), None);
+        assert_eq!(
+            is_whiteout(Path::new(".wh.foo")),
+            Some(PathBuf::from("foo"))
+        );
     }
 }
