@@ -15,7 +15,7 @@ pub struct Options {
     #[arg(default_value = ".")]
     output_dir: String,
 
-    /// Overwrite the existing output directory if it exists.
+    /// Overwrite the existing output directory if it exists
     #[arg(long, short)]
     overwrite: bool,
 
