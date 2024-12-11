@@ -6,11 +6,14 @@ use color_eyre::{
     Result, Section, SectionExt,
 };
 use derive_more::derive::Display;
+use itertools::Itertools;
 use std::str::FromStr;
+use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 use tap::Pipe;
 
 mod ext;
 pub mod registry;
+pub mod transform;
 
 /// Platform represents the platform a container image is built for.
 /// This follows the OCI Image Spec's platform definition while also supporting
@@ -455,44 +458,161 @@ impl std::fmt::Display for Reference {
     }
 }
 
-/// A reference to a specific layer within an OCI container image.
+/// A descriptor for a specific layer within an OCI container image.
 /// This follows the OCI Image Spec's layer descriptor format.
 #[derive(Debug, Clone, PartialEq, Eq, Builder)]
-pub struct LayerReference {
+pub struct LayerDescriptor {
     /// The content-addressable digest of the layer
     #[builder(into)]
     pub digest: Digest,
+
+    /// The size of the layer in bytes
+    pub size: i64,
+
+    /// The media type of the layer
+    pub media_type: LayerMediaType,
 }
 
-impl FromStr for LayerReference {
-    type Err = color_eyre::Report;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let digest = Digest::from_str(s).context("parse digest")?;
-        Ok(Self { digest })
-    }
-}
-
-impl From<&LayerReference> for LayerReference {
-    fn from(layer: &LayerReference) -> Self {
+impl From<&LayerDescriptor> for LayerDescriptor {
+    fn from(layer: &LayerDescriptor) -> Self {
         layer.clone()
     }
 }
 
-impl From<&Digest> for LayerReference {
-    fn from(digest: &Digest) -> Self {
-        digest.clone().into()
-    }
-}
-
-impl From<Digest> for LayerReference {
-    fn from(digest: Digest) -> Self {
-        Self { digest }
-    }
-}
-
-impl std::fmt::Display for LayerReference {
+impl std::fmt::Display for LayerDescriptor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.digest)
+    }
+}
+
+/// Media types for OCI container image layers.
+///
+/// Each entry in this enum is a unique media type "base"; some of them then can have flags applied.
+/// For example, even though `Foreign` is a valid [`LayerMediaTypeFlag`], [`LayerMediaType::DockerForeign`]
+/// is distinct from [`LayerMediaType::Docker`] because it is an entirely different media type.
+///
+/// Spec reference: https://github.com/opencontainers/image-spec/blob/main/media-types.md
+#[derive(Debug, Clone, PartialEq, Eq, AsRefStr, EnumIter)]
+pub enum LayerMediaType {
+    /// A standard Docker container layer in gzipped tar format.
+    ///
+    /// These layers contain filesystem changes that make up the container image.
+    /// Each layer represents a Dockerfile instruction or equivalent build step.
+    #[strum(serialize = "application/vnd.docker.image.rootfs.diff.tar.gzip")]
+    Docker,
+
+    /// A Docker container layer that was built for a different architecture or operating system.
+    ///
+    /// Foreign layers are used in multi-platform images where the same image can contain
+    /// layers for different platforms (e.g. linux/amd64 vs linux/arm64).
+    #[strum(serialize = "application/vnd.docker.image.rootfs.foreign.diff.tar.gzip")]
+    DockerForeign,
+
+    /// A standard OCI container layer.
+    #[strum(serialize = "application/vnd.oci.image.layer.v1.tar")]
+    Oci(Vec<LayerMediaTypeFlag>),
+
+    /// An OCI container layer that has restrictions on distribution.
+    ///
+    /// Non-distributable layers typically contain licensed content, proprietary code,
+    /// or other material that cannot be freely redistributed.
+    /// Registry operators are not required to push or pull these layers.
+    /// Instead, the layer data might need to be obtained through other means
+    /// (e.g. direct download from a vendor).
+    ///
+    /// These are officially marked deprecated in the OCI spec, along with the directive
+    /// that clients should download the layers as usual:
+    /// https://github.com/opencontainers/image-spec/blob/main/layer.md#non-distributable-layers
+    #[strum(serialize = "application/vnd.oci.image.layer.nondistributable.v1.tar")]
+    OciNonDistributable(Vec<LayerMediaTypeFlag>),
+}
+
+impl LayerMediaType {
+    /// Overwrite the flags for the media type.
+    fn replace_flags(self, flags: Vec<LayerMediaTypeFlag>) -> Self {
+        match self {
+            LayerMediaType::Oci(_) => LayerMediaType::Oci(flags),
+            LayerMediaType::OciNonDistributable(_) => LayerMediaType::OciNonDistributable(flags),
+            LayerMediaType::Docker | LayerMediaType::DockerForeign => self,
+        }
+    }
+}
+
+impl FromStr for LayerMediaType {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (base, flags) = s.split_once('+').unwrap_or((s, ""));
+        for media_type in LayerMediaType::iter() {
+            if base == media_type.as_ref() {
+                return match media_type {
+                    // Docker layers don't have flags.
+                    LayerMediaType::Docker | LayerMediaType::DockerForeign => Ok(media_type),
+
+                    // OCI layers have flags; handle both bases the same way.
+                    mt @ LayerMediaType::Oci(_) | mt @ LayerMediaType::OciNonDistributable(_) => {
+                        flags
+                            .split('+')
+                            .map(LayerMediaTypeFlag::from_str)
+                            .try_collect()
+                            .map(|flags| mt.replace_flags(flags))
+                    }
+                };
+            }
+
+            // It's always possible for a future media type to be added that has a plus sign;
+            // this is a fallback to catch that case.
+            if s == media_type.as_ref() {
+                return Ok(media_type);
+            }
+        }
+        bail!("unknown media type: {s}");
+    }
+}
+
+impl std::fmt::Display for LayerMediaType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_ref())
+    }
+}
+
+/// Flags for layer media types.
+///
+/// Some flags indicate the underlying media should be transformed, while some are informational.
+/// This library interprets all flags as "transforming", and informational flags are simply identity transformations.
+///
+/// When multiple flags apply to a media type, this library applies transforms right-to-left.
+/// For example, the hypothetical media type `application/vnd.oci.image.layer.v1.tar+foreign+zstd+gzip`
+/// would be read with the following steps:
+/// 1. Decompress the layer with gzip.
+/// 2. Decompress the layer with zstd.
+/// 3. Apply the foreign flag (this is an informational flag, so its transformation is a no-op).
+/// 4. The underlying media type is now in effect `application/vnd.oci.image.layer.v1.tar`.
+///
+/// Note that this library is currently focused on _reading_ images; if you choose to use these
+/// flags to _create_ media types make sure you consult the OCI spec for valid combinations.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, AsRefStr, EnumIter)]
+pub enum LayerMediaTypeFlag {
+    /// Foreign layers are used in multi-platform images where the same image can contain
+    /// layers for different platforms (e.g. linux/amd64 vs linux/arm64).
+    #[strum(serialize = "foreign")]
+    Foreign,
+
+    /// The layer is compressed with zstd.
+    #[strum(serialize = "zstd")]
+    Zstd,
+
+    /// The layer is compressed with gzip.
+    #[strum(serialize = "gzip")]
+    Gzip,
+}
+
+impl FromStr for LayerMediaTypeFlag {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::iter()
+            .find(|flag| flag.as_ref() == s)
+            .ok_or_else(|| eyre!("unknown flag: {s}"))
     }
 }

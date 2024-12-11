@@ -1,36 +1,213 @@
 //! Interacts with remote OCI registries.
 
-use std::str::FromStr;
+use std::{path::Path, str::FromStr};
 
+use bytes::Bytes;
 use color_eyre::eyre::{Context, Result};
+use derive_more::Debug;
+use futures_lite::{Stream, StreamExt};
 use oci_client::{
-    client::ClientConfig, manifest::ImageIndexEntry, secrets::RegistryAuth, Client,
-    Reference as OciReference,
+    client::ClientConfig,
+    manifest::{ImageIndexEntry, OciDescriptor},
+    secrets::RegistryAuth,
+    Client, Reference as OciReference, RegistryOperation,
+};
+use tokio_tar::Archive;
+use tokio_util::io::StreamReader;
+use tracing::info;
+
+use crate::{
+    ext::PriorityFind,
+    transform::{self, Chunk},
+    Digest, LayerDescriptor, LayerMediaType, LayerMediaTypeFlag, Platform, Reference, Version,
 };
 
-use crate::{ext::PriorityFind, LayerReference, Platform, Reference, Version};
+/// Each instance is a unique view of remote registry for a specific [`Platform`] and [`Reference`].
+/// The intention here is to better support chained methods like "pull list of layers" and then "apply each layer to disk".
+// Note: internal fields aren't public because we don't want the caller to be able to mutate the internal state between method calls.
+#[derive(Debug, Clone)]
+pub struct Registry {
+    /// The OCI reference, used by the underlying client.
+    reference: OciReference,
 
-/// Enumerate layers for a container reference in the remote registry.
-/// Layers are returned in order from the base image to the application.
-#[tracing::instrument]
-pub async fn layers(
-    platform: Option<&Platform>,
-    reference: &Reference,
-) -> Result<Vec<LayerReference>> {
-    let client = client(platform.cloned());
-    let auth = RegistryAuth::Anonymous;
+    /// Authentication information for the registry.
+    auth: RegistryAuth,
 
-    let oci_ref = OciReference::from(reference);
-    let (manifest, _) = client
-        .pull_image_manifest(&oci_ref, &auth)
-        .await
-        .context("pull image manifest: {oci_ref}")?;
+    /// The client used to interact with the registry.
+    #[debug(skip)]
+    client: Client,
+}
 
-    manifest
-        .layers
-        .into_iter()
-        .map(|layer| LayerReference::from_str(&layer.digest))
-        .collect()
+#[bon::bon]
+impl Registry {
+    /// Create a new registry for a specific platform and reference.
+    #[builder]
+    pub async fn new(platform: Option<Platform>, reference: Reference) -> Result<Self> {
+        let client = client(platform.clone());
+        let reference = OciReference::from(&reference);
+
+        // Future improvement: support authentication.
+        let auth = RegistryAuth::Anonymous;
+
+        client
+            .auth(&reference, &auth, RegistryOperation::Pull)
+            .await
+            .context("authenticate to registry")?;
+
+        Ok(Self {
+            auth,
+            client,
+            reference,
+        })
+    }
+}
+
+impl Registry {
+    /// Enumerate layers for a container reference in the remote registry.
+    /// Layers are returned in order from the base image to the application.
+    #[tracing::instrument]
+    pub async fn layers(&self) -> Result<Vec<LayerDescriptor>> {
+        let (manifest, _) = self
+            .client
+            .pull_image_manifest(&self.reference, &self.auth)
+            .await
+            .context("pull image manifest")?;
+        manifest
+            .layers
+            .into_iter()
+            .map(LayerDescriptor::try_from)
+            .collect()
+    }
+
+    /// Pull the bytes of a layer from the registry in a stream.
+    /// The `media_type` field of the [`LayerDescriptor`] can be used to determine how best to handle the content.
+    ///
+    /// ## Layers explanation
+    ///
+    /// You can think of a layer as a "diff" (you can envision this similarly to a git diff)
+    /// from the previous layer; the first layer is a "diff" from an empty layer.
+    ///
+    /// Each diff contains zero or more changes; each change is one of the below:
+    /// - A file is added.
+    /// - A file is removed.
+    /// - A file is modified.
+    pub async fn pull_layer(
+        &self,
+        layer: &LayerDescriptor,
+    ) -> Result<impl Stream<Item = Result<Bytes>>> {
+        self.pull_layer_internal(layer)
+            .await
+            .map(|stream| stream.map(|chunk| chunk.context("read chunk")))
+    }
+
+    async fn pull_layer_internal(
+        &self,
+        layer: &LayerDescriptor,
+    ) -> Result<impl Stream<Item = Chunk>> {
+        let oci_layer = OciDescriptor::from(layer);
+        self.client
+            .pull_blob_stream(&self.reference, &oci_layer)
+            .await
+            .context("initiate stream")
+            .map(|layer| layer.stream)
+    }
+
+    /// Apply a layer to a location on disk.
+    ///
+    /// The intention of this method is that when it is run for each layer in an image in order it is equivalent
+    /// to the functionality you'd get by running `docker pull`, `docker save`, and then recursively extracting the
+    /// layers to the same directory.
+    ///
+    /// As such the following edge cases are handled as follows:
+    /// - Foreign layers are skipped, as they would if you ran `docker pull`.
+    /// - Non-distributable layers are attempted to be applied, but are skipped if they fail.
+    /// - Standard layers are applied as normal; if they fail they are skipped.
+    ///
+    /// If you wish to customize the behavior, use [`Registry::pull_layer`] directly instead.
+    ///
+    /// ## Application order
+    ///
+    /// This method performs the following steps:
+    /// 1. Downloads the specified layer from the registry.
+    /// 2. Applies the layer diff to the specified path on disk.
+    ///
+    /// When applying multiple layers, it's important to apply them in order,
+    /// and to apply them to a consistent location on disk.
+    ///
+    /// It is safe to apply each layer to a fresh directory if a separate directory per layer is desired:
+    /// the only sticking point for this case is removed files,
+    /// and this function simply skips removing files that don't exist.
+    ///
+    /// ## Layers explanation
+    ///
+    /// You can think of a layer as a "diff" (you can envision this similarly to a git diff)
+    /// from the previous layer; the first layer is a "diff" from an empty layer.
+    ///
+    /// Each diff contains zero or more changes; each change is one of the below:
+    /// - A file is added.
+    /// - A file is removed.
+    /// - A file is modified.
+    //
+    // A future improvement would be to support downloading layers concurrently,
+    // then still applying them serially. Since network transfer is the slowest part of this process,
+    // this would speed up the overall process.
+    #[tracing::instrument]
+    pub async fn apply_layer(&self, layer: &LayerDescriptor, _path: &Path) -> Result<()> {
+        let stream = self.pull_layer_internal(layer).await?;
+
+        /// Unwrap a value, logging an error and continuing the loop if it fails.
+        macro_rules! unwrap_warn {
+            ($expr:expr) => {
+                unwrap_warn!($expr,);
+            };
+            ($expr:expr, $($msg:tt)*) => {
+                match $expr {
+                    Ok(value) => value,
+                    Err(e) => {
+                        tracing::warn!(error = ?e, $($msg)*);
+                        continue;
+                    }
+                }
+            };
+        }
+
+        // Applying the layer requires interpreting the layer's media type.
+        match &layer.media_type {
+            // Docker layers are applied slightly differently than OCI layers.
+            LayerMediaType::Docker => todo!(),
+
+            // Standard OCI layers are applied as normal.
+            // Reminder that per the OCI spec, clients should attempt to download and apply "non-distributable" layers.
+            LayerMediaType::Oci(flags) | LayerMediaType::OciNonDistributable(flags) => {
+                // Foreign layers are skipped, as they would if you ran `docker pull`.
+                // This causes an extra iteration over the flags for layers that aren't foreign,
+                // but the flag count is small and this saves us the complexity of setting up layer transforms
+                // and then discarding them if this flag is encountered.
+                if flags.contains(&LayerMediaTypeFlag::Foreign) {
+                    return Ok(());
+                }
+
+                // Future improvement: specialize the stream based on the flags; the current implementation
+                // forces everything through dynamic dispatch to support arbitrary flags,
+                // but the most common case is a single flag
+                // (according to the OCI spec that's all we'll ever actually see).
+                let stream = transform::sequence(stream, flags);
+                let reader = StreamReader::new(stream);
+                let mut archive = Archive::new(reader);
+                let mut entries = archive.entries().context("read entries from tar")?;
+                while let Some(entry) = entries.next().await {
+                    let entry = unwrap_warn!(entry, "read entry");
+                    let path = unwrap_warn!(entry.path(), "read path");
+                    info!(?path, "read entry");
+                }
+
+                Ok(())
+            }
+
+            // Foreign docker layers are skipped, as they would if you ran `docker pull`.
+            LayerMediaType::DockerForeign => return Ok(()),
+        }
+    }
 }
 
 impl From<&Reference> for OciReference {
@@ -47,6 +224,35 @@ impl From<&Reference> for OciReference {
                 digest.to_string(),
             ),
         }
+    }
+}
+
+impl From<LayerDescriptor> for OciDescriptor {
+    fn from(layer: LayerDescriptor) -> Self {
+        Self {
+            digest: layer.digest.to_string(),
+            media_type: layer.media_type.to_string(),
+            size: layer.size,
+            ..Default::default()
+        }
+    }
+}
+
+impl From<&LayerDescriptor> for OciDescriptor {
+    fn from(layer: &LayerDescriptor) -> Self {
+        layer.clone().into()
+    }
+}
+
+impl TryFrom<OciDescriptor> for LayerDescriptor {
+    type Error = color_eyre::Report;
+
+    fn try_from(value: OciDescriptor) -> Result<Self, Self::Error> {
+        Ok(Self {
+            digest: Digest::from_str(&value.digest).context("parse digest")?,
+            media_type: LayerMediaType::from_str(&value.media_type).context("parse media type")?,
+            size: value.size,
+        })
     }
 }
 
