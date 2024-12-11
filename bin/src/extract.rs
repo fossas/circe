@@ -1,7 +1,8 @@
-use circe::{registry::Registry, Platform, Reference};
+use circe::{registry::Registry, LayerDescriptor, Platform, Reference};
 use clap::{Parser, ValueEnum};
 use color_eyre::eyre::{bail, Context, Result};
 use std::{path::PathBuf, str::FromStr};
+use tap::Pipe;
 use tracing::info;
 
 #[derive(Debug, Parser)]
@@ -40,7 +41,7 @@ pub struct Options {
 
     /// How to handle layers during extraction
     #[arg(long, default_value = "squash")]
-    mode: Mode,
+    layers: Mode,
 }
 
 #[derive(Copy, Clone, Debug, Default, ValueEnum)]
@@ -51,6 +52,13 @@ pub enum Mode {
     /// as if the container was actually booted.
     #[default]
     Squash,
+
+    /// Only extract the base layer.
+    Base,
+
+    /// Extract all layers to a separate directory for each layer.
+    /// Also writes a `layers.json` file containing the list of layers in application order.
+    Separate,
 }
 
 #[tracing::instrument]
@@ -66,11 +74,30 @@ pub async fn main(opts: Options) -> Result<()> {
         .context("configure remote registry")?;
 
     let layers = registry.layers().await.context("list layers")?;
-    let count = layers.len();
+    match opts.layers {
+        Mode::Squash => squash(&registry, &output, layers).await,
+        Mode::Base => squash(&registry, &output, layers.into_iter().take(1)).await,
+        Mode::Separate => separate(&registry, &output, layers).await,
+    }
+}
+
+async fn squash(
+    registry: &Registry,
+    output: &PathBuf,
+    layers: impl IntoIterator<Item = LayerDescriptor>,
+) -> Result<()> {
+    let layers = layers.into_iter();
+    let count = layers.size_hint();
+    let count = count.1.unwrap_or(count.0);
     info!("enumerated {count} {}", plural(count, "layer", "layers"));
 
-    for (descriptor, layer) in layers.into_iter().zip(1usize..) {
-        info!(layer = %descriptor, "applying layer {layer} of {count}");
+    for (descriptor, layer) in layers.zip(1usize..) {
+        if count > 0 {
+            info!(layer = %descriptor, "applying layer {layer} of {count}");
+        } else {
+            info!(layer = %descriptor, "applying layer {layer}");
+        }
+
         registry
             .apply_layer(&descriptor, &output)
             .await
@@ -78,6 +105,41 @@ pub async fn main(opts: Options) -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn separate(
+    registry: &Registry,
+    output: &PathBuf,
+    layers: impl IntoIterator<Item = LayerDescriptor>,
+) -> Result<()> {
+    let layers = layers.into_iter().collect::<Vec<_>>();
+    let count = layers.len();
+    info!("enumerated {count} {}", plural(count, "layer", "layers"));
+
+    for (descriptor, layer) in layers.iter().zip(1usize..) {
+        let output = output.join(descriptor.digest.as_hex());
+        if count > 0 {
+            info!(layer = %descriptor, "applying layer {layer} of {count}");
+        } else {
+            info!(layer = %descriptor, "applying layer {layer}");
+        }
+
+        registry
+            .apply_layer(&descriptor, &output)
+            .await
+            .with_context(|| format!("apply layer {descriptor} to {output:?}"))?;
+    }
+
+    let index = layers
+        .into_iter()
+        .map(|l| l.digest.as_hex())
+        .collect::<Vec<_>>()
+        .pipe_ref(serde_json::to_string_pretty)
+        .context("serialize layer index")?;
+
+    tokio::fs::write(output.join("layers.json"), index)
+        .await
+        .context("write layer index")
 }
 
 /// Given a (probably relative) path to a directory, canonicalize it to an absolute path.

@@ -24,3 +24,5 @@ tracing-error = { version = "0.2.1" }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 tracing-tree = { version = "0.4.0" }
 circe = { path = "../lib" }
+serde = "1.0.216"
+serde_json = "1.0.133"
