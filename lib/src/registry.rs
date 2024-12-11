@@ -161,26 +161,24 @@ impl Registry {
     pub async fn apply_layer(&self, layer: &LayerDescriptor, output: &Path) -> Result<()> {
         let stream = self.pull_layer_internal(layer).await?;
 
-        /// Unwrap a value, logging an error and continuing the loop if it fails.
-        macro_rules! unwrap_warn {
-            ($expr:expr) => {
-                unwrap_warn!($expr,);
-            };
-            ($expr:expr, $($msg:tt)*) => {
-                match $expr {
-                    Ok(value) => value,
-                    Err(e) => {
-                        tracing::warn!(error = ?e, $($msg)*);
-                        continue;
-                    }
-                }
-            };
-        }
-
         // Applying the layer requires interpreting the layer's media type.
         match &layer.media_type {
-            // Docker layers are applied slightly differently than OCI layers.
-            LayerMediaType::Docker => todo!(),
+            // Foreign docker layers are skipped, as they would if you ran `docker pull`.
+            LayerMediaType::DockerForeign => {
+                warn!("skip: foreign docker layer");
+                Ok(())
+            }
+
+            // Docker layers are applied the same as OCI layers:
+            // - They have the same whiteout semantics
+            // - The have the same behavior for new or changed files
+            //
+            // The main difference is that Docker layers have a specific transport format:
+            // they're always gzipped tarballs.
+            LayerMediaType::Docker => {
+                let stream = transform::gzip(stream);
+                apply_tarball(stream, output).await
+            }
 
             // Standard OCI layers are applied as normal.
             // Reminder that per the OCI spec, clients should attempt to download and apply "non-distributable" layers.
@@ -190,58 +188,97 @@ impl Registry {
                 // but the flag count is small and this saves us the complexity of setting up layer transforms
                 // and then discarding them if this flag is encountered.
                 if flags.contains(&LayerMediaTypeFlag::Foreign) {
+                    warn!("skip: foreign layer");
                     return Ok(());
                 }
 
-                // Future improvement: specialize the stream based on the flags; the current implementation
-                // forces everything through dynamic dispatch to support arbitrary flags,
-                // but the most common case is a single flag
-                // (according to the OCI spec that's all we'll ever actually see).
-                let stream = transform::sequence(stream, flags);
-                let reader = StreamReader::new(stream);
-                let mut archive = Archive::new(reader);
-                let mut entries = archive.entries().context("read entries from tar")?;
+                // The vast majority of the time (maybe even all the time), the layer only has zero or one flags.
+                // Meanwhile, `transform::sequence` forces the streams into dynamic dispatch, imposing extra overhead.
+                // This match allows us to specialize the stream based on the most common cases,
+                // while still supporting arbitrary flags.
+                match flags.as_slice() {
+                    // No flags; this means the layer is uncompressed.
+                    [] => apply_tarball(stream, output).await,
 
-                // Future improvement: the OCI spec guarantees that paths will not repeat within the same layer,
-                // so we could concurrently read files and apply them to disk.
-                // The overall archive is streaming so we'd need to buffer the entries,
-                // but assuming disk is the bottleneck this might speed up the process significantly.
-                // We could also of course write the tar to disk and then extract it concurrently
-                // without buffering- maybe we could read the tar entries while streaming to disk,
-                // and then divide them among workers that apply them to disk concurrently?
-                while let Some(entry) = entries.next().await {
-                    let mut entry = unwrap_warn!(entry, "read entry");
-                    let path = unwrap_warn!(entry.path(), "read entry path");
-
-                    // Paths inside the container are relative to the root of the container;
-                    // we need to convert them to be relative to the output directory.
-                    let path = output.join(path);
-
-                    // Whiteout files delete the file from the filesystem.
-                    if let Some(path) = is_whiteout(&path) {
-                        unwrap_warn!(tokio::fs::remove_file(&path).await, "whiteout: {path:?}");
-                        info!(?path, "whiteout");
-                        continue;
+                    // The layer is compressed with zstd.
+                    [LayerMediaTypeFlag::Zstd] => {
+                        let stream = transform::zstd(stream);
+                        apply_tarball(stream, output).await
                     }
 
-                    // Otherwise, apply the file as normal.
-                    // Both _new_ and _changed_ files are handled the same way:
-                    // the layer contains the entire file content, so we just overwrite the file.
-                    if !unwrap_warn!(entry.unpack_in(output).await, "unpack {path:?}") {
-                        warn!(?path, "skip: tried to write outside of output directory");
-                        continue;
+                    // The layer is compressed with gzip.
+                    [LayerMediaTypeFlag::Gzip] => {
+                        let stream = transform::gzip(stream);
+                        apply_tarball(stream, output).await
                     }
 
-                    info!(?path, "apply");
+                    // The layer has a more complicated set of flags.
+                    // For this, we fall back to the generic sequence operator.
+                    _ => {
+                        let stream = transform::sequence(stream, flags);
+                        apply_tarball(stream, output).await
+                    }
                 }
-
-                Ok(())
             }
-
-            // Foreign docker layers are skipped, as they would if you ran `docker pull`.
-            LayerMediaType::DockerForeign => return Ok(()),
         }
     }
+}
+
+async fn apply_tarball(stream: impl Stream<Item = Chunk> + Unpin, output: &Path) -> Result<()> {
+    let reader = StreamReader::new(stream);
+    let mut archive = Archive::new(reader);
+    let mut entries = archive.entries().context("read entries from tar")?;
+
+    /// Unwrap a value, logging an error and continuing the loop if it fails.
+    macro_rules! unwrap_warn {
+        ($expr:expr) => {
+            unwrap_warn!($expr,);
+        };
+        ($expr:expr, $($msg:tt)*) => {
+            match $expr {
+                Ok(value) => value,
+                Err(e) => {
+                    tracing::warn!(error = ?e, $($msg)*);
+                    continue;
+                }
+            }
+        };
+    }
+
+    // Future improvement: the OCI spec guarantees that paths will not repeat within the same layer,
+    // so we could concurrently read files and apply them to disk.
+    // The overall archive is streaming so we'd need to buffer the entries,
+    // but assuming disk is the bottleneck this might speed up the process significantly.
+    // We could also of course write the tar to disk and then extract it concurrently
+    // without buffering- maybe we could read the tar entries while streaming to disk,
+    // and then divide them among workers that apply them to disk concurrently?
+    while let Some(entry) = entries.next().await {
+        let mut entry = unwrap_warn!(entry, "read entry");
+        let path = unwrap_warn!(entry.path(), "read entry path");
+
+        // Paths inside the container are relative to the root of the container;
+        // we need to convert them to be relative to the output directory.
+        let path = output.join(path);
+
+        // Whiteout files delete the file from the filesystem.
+        if let Some(path) = is_whiteout(&path) {
+            unwrap_warn!(tokio::fs::remove_file(&path).await, "whiteout: {path:?}");
+            info!(?path, "whiteout");
+            continue;
+        }
+
+        // Otherwise, apply the file as normal.
+        // Both _new_ and _changed_ files are handled the same way:
+        // the layer contains the entire file content, so we just overwrite the file.
+        if !unwrap_warn!(entry.unpack_in(output).await, "unpack {path:?}") {
+            warn!(?path, "skip: tried to write outside of output directory");
+            continue;
+        }
+
+        info!(?path, "apply");
+    }
+
+    Ok(())
 }
 
 impl From<&Reference> for OciReference {
