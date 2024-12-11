@@ -14,19 +14,22 @@ TBD, but generally the goal will be something like:
 ; circe read docker.io/contribsys/faktory:latest --layers squash --platform linux/amd64
 ```
 
-# planned features
+# features
+
+> [!NOTE]
+> Unchecked features are vaguely planned but not implemented.
 
 - [ ] Support extracting contents of OCI images:
-  - [ ] From OCI stores
+  - [x] From OCI stores
   - [ ] From local container hosts (e.g. Docker)
   - [ ] From local tarballs
 - [ ] Extract the contents:
-  - [ ] To disk
+  - [x] To disk
   - [ ] To stdout (as NDJSON)
 - [ ] Extract layers by:
-  - [ ] Squashed layer sets (e.g. "base + rest" or "all layers" or other combinations)
-  - [ ] Individual layers
+  - [x] Squashed layer sets (e.g. "base + rest" or "all layers" or other combinations)
+  - [x] Individual layers
   - [ ] Filtered layers
-- [ ] Specify target(s) to extract (e.g. `linux/amd64`, `darwin/arch64`, etc)
+- [x] Specify target(s) to extract (e.g. `linux/amd64`, `darwin/arch64`, etc)
 - [ ] Filter file(s) to extract
 - [ ] When extracting files to stdout, store large blobs at temporary locations and reference them
