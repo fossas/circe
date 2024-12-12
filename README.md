@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[![FOSSA Status](https://app.fossa.com/api/projects/custom%2B1%2Fgithub.com%2Ffossas%circe.svg?type=shield&issueType=license)](https://app.fossa.com/projects/custom%2B1%2Fgithub.com%2Ffossas%2Fcirce?ref=badge_shield&issueType=license)
+[![FOSSA Status](https://app.fossa.com/api/projects/custom%2B1%2Fgithub.com%2Ffossas%2Fcirce.svg?type=shield&issueType=license)](https://app.fossa.com/projects/custom%2B1%2Fgithub.com%2Ffossas%2Fcirce?ref=badge_shield&issueType=license)
 [![FOSSA Status](https://app.fossa.com/api/projects/custom%2B1%2Fgithub.com%2Ffossas%2Fcirce.svg?type=shield&issueType=security)](https://app.fossa.com/projects/custom%2B1%2Fgithub.com%2Ffossas%2Fcirce?ref=badge_shield&issueType=security)
 
 </div>
