@@ -17,16 +17,19 @@ extracts and examines the contents of containers.
 > The installers below install to `~/.circe/bin`, or `%USERPROFILE%\circe\bin` on Windows.
 > They try to place the binary in your PATH, but you may need to add it manually.
 
-```shell
-# macOS or Linux
-curl https://github.com/fossas/circe/releases/latest/download/circe-installer.sh | bash
-
-# Windows
-powershell -c "irm https://github.com/fossas/circe/releases/latest/download/circe-installer.ps1 | iex"
-```
-
 > [!TIP]
 > You can update circe in the future with `circe-update`, which is installed alongside `circe`.
+
+## macOS or Linux
+```shell
+curl https://github.com/fossas/circe/releases/latest/download/circe-installer.sh | bash
+```
+
+## Windows
+
+```shell
+powershell -c "irm https://github.com/fossas/circe/releases/latest/download/circe-installer.ps1 | iex"
+```
 
 # usage
 
