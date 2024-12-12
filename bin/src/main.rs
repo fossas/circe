@@ -4,7 +4,7 @@ use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{self, prelude::*};
 
 mod extract;
-
+mod list;
 #[derive(Debug, Parser)]
 #[command(author, version, about)]
 struct Cli {
@@ -16,6 +16,9 @@ struct Cli {
 enum Commands {
     /// Extract OCI image to a directory
     Extract(extract::Options),
+
+    /// Enumerate the layers and files in an OCI image
+    List(list::Options),
 }
 
 #[tokio::main]
@@ -46,6 +49,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Extract(opts) => extract::main(opts).await?,
+        Commands::List(opts) => list::main(opts).await?,
     }
 
     Ok(())

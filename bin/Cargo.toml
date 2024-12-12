@@ -1,6 +1,6 @@
 [package]
 name = "circe"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Jessica Black <me@jessica.black>", "FOSSA Inc. <support@fossa.com>"]
 description = "Extracts and examines the contents of containers"
@@ -24,3 +24,4 @@ tracing-tree = { version = "0.4.0" }
 circe_lib = { path = "../lib" }
 serde_json = "1.0.133"
 derive_more = { version = "1.0.0", features = ["debug"] }
+pluralizer = "0.4.0"

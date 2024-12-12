@@ -36,8 +36,12 @@ powershell -c "irm https://github.com/fossas/circe/releases/latest/download/circ
 > [!TIP]
 > Check the help output for more details.
 
+## extract
+
+Extracts the contents of the image to disk.
+
 ```shell
-# Export the contents of the image to disk.
+# Extracts the contents of the image to disk.
 #
 # Usage:
 #   circe extract <image> <target> [--layers <layers>] [--platform <platform>] [--overwrite]
@@ -58,11 +62,48 @@ powershell -c "irm https://github.com/fossas/circe/releases/latest/download/circ
 #       Accepts the same values as `docker` (e.g. `linux/amd64`, `darwin/arm64`, etc).
 #   --overwrite
 #       If the target directory already exists, overwrite it.
+#   --layer-glob, --lg
+#       A glob pattern to filter layers to extract.
+#       Layers matching this pattern are extracted.
+#   --layer-regex, --lr
+#       A regex pattern to filter layers to extract.
+#       Layers matching this pattern are extracted.
+#   --file-glob, --fg
+#       A glob pattern to filter files to extract.
+#       Files matching this pattern are extracted.
+#   --file-regex, --fr
+#       A regex pattern to filter files to extract.
+#       Files matching this pattern are extracted.
 #   --username
 #       The username to use for authentication; "password" is also required if provided.
 #   --password
 #       The password to use for authentication; "username" is also required if provided.
 circe extract docker.io/contribsys/faktory:latest ./faktory --layers squash --platform linux/amd64
+```
+
+## list
+
+Lists the contents of an image.
+
+```shell
+# Lists the contents of the image.
+#
+# Usage:
+#   circe list <image> [--platform <platform>] [--username <username>] [--password <password>]
+#
+# Arguments:
+#   <image>
+#       The image to list.
+#
+# Options for `circe list`:
+#   --platform
+#       Defaults to your current platform.
+#       Accepts the same values as `docker` (e.g. `linux/amd64`, `darwin/arm64`, etc).
+#   --username
+#       The username to use for authentication; "password" is also required if provided.
+#   --password
+#       The password to use for authentication; "username" is also required if provided.
+circe list docker.io/contribsys/faktory:latest
 ```
 
 ## platform selection

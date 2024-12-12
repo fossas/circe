@@ -1,7 +1,7 @@
 use circe_lib::{
     registry::Registry, Authentication, Filters, LayerDescriptor, Platform, Reference,
 };
-use clap::{Parser, ValueEnum};
+use clap::{Args, Parser, ValueEnum};
 use color_eyre::eyre::{bail, Context, Result};
 use derive_more::Debug;
 use std::{path::PathBuf, str::FromStr};
@@ -9,9 +9,9 @@ use tracing::{debug, info};
 
 #[derive(Debug, Parser)]
 pub struct Options {
-    /// Image reference being extracted (e.g. docker.io/library/ubuntu:latest)
-    #[arg(value_parser = Reference::from_str)]
-    image: Reference,
+    /// Target to extract
+    #[clap(flatten)]
+    target: Target,
 
     /// Directory to which the extracted contents will be written
     #[arg(default_value = ".")]
@@ -20,21 +20,6 @@ pub struct Options {
     /// Overwrite the existing output directory if it exists
     #[arg(long, short)]
     overwrite: bool,
-
-    /// Platform to extract (e.g. linux/amd64)
-    ///
-    /// If the image is not multi-platform, this is ignored.
-    /// If the image is multi-platform, this is used to select the platform to extract.
-    ///
-    /// If the image is multi-platform and this argument is not provided,
-    /// the platform is chosen according to the following priority list:
-    /// 1. The first platform-independent image
-    /// 2. The current platform (if available)
-    /// 3. The `linux` platform for the current architecture
-    /// 4. The `linux` platform for the `amd64` architecture
-    /// 5. The first platform in the image manifest
-    #[arg(long, value_parser = Platform::from_str, verbatim_doc_comment)]
-    platform: Option<Platform>,
 
     /// How to handle layers during extraction
     #[arg(long, default_value = "squash")]
@@ -88,15 +73,38 @@ pub struct Options {
     /// If filters are provided, only files whose path matches any filter are extracted.
     #[arg(long, alias = "fr")]
     file_regex: Option<Vec<String>>,
+}
+
+/// Shared options for any command that needs to work with the OCI registry for a given image.
+#[derive(Debug, Args)]
+pub struct Target {
+    /// Image reference being extracted (e.g. docker.io/library/ubuntu:latest)
+    #[arg(value_parser = Reference::from_str)]
+    pub image: Reference,
+
+    /// Platform to extract (e.g. linux/amd64)
+    ///
+    /// If the image is not multi-platform, this is ignored.
+    /// If the image is multi-platform, this is used to select the platform to extract.
+    ///
+    /// If the image is multi-platform and this argument is not provided,
+    /// the platform is chosen according to the following priority list:
+    /// 1. The first platform-independent image
+    /// 2. The current platform (if available)
+    /// 3. The `linux` platform for the current architecture
+    /// 4. The `linux` platform for the `amd64` architecture
+    /// 5. The first platform in the image manifest
+    #[arg(long, value_parser = Platform::from_str, verbatim_doc_comment)]
+    pub platform: Option<Platform>,
 
     /// The username to use for authenticating to the registry
     #[arg(long, requires = "password")]
-    username: Option<String>,
+    pub username: Option<String>,
 
     /// The password to use for authenticating to the registry
     #[arg(long, requires = "username")]
     #[debug(skip)]
-    password: Option<String>,
+    pub password: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, Default, ValueEnum)]
@@ -120,7 +128,7 @@ pub enum Mode {
 pub async fn main(opts: Options) -> Result<()> {
     info!("extracting image");
 
-    let auth = match (opts.username, opts.password) {
+    let auth = match (opts.target.username, opts.target.password) {
         (Some(username), Some(password)) => Authentication::basic(username, password),
         _ => Authentication::default(),
     };
@@ -132,8 +140,8 @@ pub async fn main(opts: Options) -> Result<()> {
 
     let output = canonicalize_output_dir(&opts.output_dir, opts.overwrite)?;
     let registry = Registry::builder()
-        .maybe_platform(opts.platform)
-        .reference(opts.image)
+        .maybe_platform(opts.target.platform)
+        .reference(opts.target.image)
         .auth(auth)
         .layer_filters(layer_globs + layer_regexes)
         .file_filters(file_globs + file_regexes)

@@ -27,6 +27,22 @@ use crate::{
     LayerMediaTypeFlag, Platform, Reference, Version,
 };
 
+/// Unwrap a value, logging an error and performing the provided action if it fails.
+macro_rules! unwrap_warn {
+    ($expr:expr, $action:expr) => {
+        unwrap_warn!($expr, $action,)
+    };
+    ($expr:expr, $action:expr, $($msg:tt)*) => {
+        match $expr {
+            Ok(value) => value,
+            Err(e) => {
+                tracing::warn!(error = ?e, $($msg)*);
+                $action;
+            }
+        }
+    };
+}
+
 /// Each instance is a unique view of remote registry for a specific [`Platform`] and [`Reference`].
 /// The intention here is to better support chained methods like "pull list of layers" and then "apply each layer to disk".
 // Note: internal fields aren't public because we don't want the caller to be able to mutate the internal state between method calls.
@@ -149,6 +165,55 @@ impl Registry {
             .map(|layer| layer.stream)
     }
 
+    /// Enumerate files in a layer.
+    #[tracing::instrument]
+    pub async fn list_files(&self, layer: &LayerDescriptor) -> Result<Vec<String>> {
+        let stream = self.pull_layer_internal(layer).await?;
+
+        // Applying the layer requires interpreting the layer's media type.
+        match &layer.media_type {
+            // Standard OCI layers.
+            LayerMediaType::Oci(flags) => {
+                // Foreign layers are skipped, as they would if you ran `docker pull`.
+                // This causes an extra iteration over the flags for layers that aren't foreign,
+                // but the flag count is small and this saves us the complexity of setting up layer transforms
+                // and then discarding them if this flag is encountered.
+                if flags.contains(&LayerMediaTypeFlag::Foreign) {
+                    warn!("skip: foreign layer");
+                    return Ok(Vec::new());
+                }
+
+                // The vast majority of the time (maybe even all the time), the layer only has zero or one flags.
+                // Meanwhile, `transform::sequence` forces the streams into dynamic dispatch, imposing extra overhead.
+                // This match allows us to specialize the stream based on the most common cases,
+                // while still supporting arbitrary flags.
+                match flags.as_slice() {
+                    // No flags; this means the layer is uncompressed.
+                    [] => enumerate_tarball(stream).await,
+
+                    // The layer is compressed with zstd.
+                    [LayerMediaTypeFlag::Zstd] => {
+                        let stream = transform::zstd(stream);
+                        enumerate_tarball(stream).await
+                    }
+
+                    // The layer is compressed with gzip.
+                    [LayerMediaTypeFlag::Gzip] => {
+                        let stream = transform::gzip(stream);
+                        enumerate_tarball(stream).await
+                    }
+
+                    // The layer has a more complicated set of flags.
+                    // For this, we fall back to the generic sequence operator.
+                    _ => {
+                        let stream = transform::sequence(stream, flags);
+                        enumerate_tarball(stream).await
+                    }
+                }
+            }
+        }
+    }
+
     /// Apply a layer to a location on disk.
     ///
     /// The intention of this method is that when it is run for each layer in an image in order it is equivalent
@@ -189,7 +254,7 @@ impl Registry {
     // A future improvement would be to support downloading layers concurrently,
     // then still applying them serially. Since network transfer is the slowest part of this process,
     // this would speed up the overall process.
-    // #[tracing::instrument]
+    #[tracing::instrument]
     pub async fn apply_layer(&self, layer: &LayerDescriptor, output: &Path) -> Result<()> {
         let stream = self.pull_layer_internal(layer).await?;
 
@@ -238,6 +303,7 @@ impl Registry {
     }
 }
 
+/// Apply files in the tarball to a location on disk.
 async fn apply_tarball(
     path_filters: &Filters,
     stream: impl Stream<Item = Chunk> + Unpin,
@@ -247,22 +313,6 @@ async fn apply_tarball(
     let mut archive = Archive::new(reader);
     let mut entries = archive.entries().context("read entries from tar")?;
 
-    /// Unwrap a value, logging an error and continuing the loop if it fails.
-    macro_rules! unwrap_warn {
-        ($expr:expr) => {
-            unwrap_warn!($expr,);
-        };
-        ($expr:expr, $($msg:tt)*) => {
-            match $expr {
-                Ok(value) => value,
-                Err(e) => {
-                    tracing::warn!(error = ?e, $($msg)*);
-                    continue;
-                }
-            }
-        };
-    }
-
     // Future improvement: the OCI spec guarantees that paths will not repeat within the same layer,
     // so we could concurrently read files and apply them to disk.
     // The overall archive is streaming so we'd need to buffer the entries,
@@ -271,8 +321,8 @@ async fn apply_tarball(
     // without buffering- maybe we could read the tar entries while streaming to disk,
     // and then divide them among workers that apply them to disk concurrently?
     while let Some(entry) = entries.next().await {
-        let mut entry = unwrap_warn!(entry, "read entry");
-        let path = unwrap_warn!(entry.path(), "read entry path");
+        let mut entry = unwrap_warn!(entry, continue, "read entry");
+        let path = unwrap_warn!(entry.path(), continue, "read entry path");
 
         // Paths inside the container are relative to the root of the container;
         // we need to convert them to be relative to the output directory.
@@ -285,7 +335,11 @@ async fn apply_tarball(
 
         // Whiteout files delete the file from the filesystem.
         if let Some(path) = is_whiteout(&path) {
-            unwrap_warn!(tokio::fs::remove_file(&path).await, "whiteout: {path:?}");
+            unwrap_warn!(
+                tokio::fs::remove_file(&path).await,
+                continue,
+                "whiteout: {path:?}"
+            );
             debug!(?path, "whiteout");
             continue;
         }
@@ -299,7 +353,7 @@ async fn apply_tarball(
         // Otherwise, apply the file as normal.
         // Both _new_ and _changed_ files are handled the same way:
         // the layer contains the entire file content, so we just overwrite the file.
-        if !unwrap_warn!(entry.unpack_in(output).await, "unpack {path:?}") {
+        if !unwrap_warn!(entry.unpack_in(output).await, continue, "unpack {path:?}") {
             warn!(?path, "skip: tried to write outside of output directory");
             continue;
         }
@@ -308,6 +362,23 @@ async fn apply_tarball(
     }
 
     Ok(())
+}
+
+/// Enumerate files in a tarball.
+async fn enumerate_tarball(stream: impl Stream<Item = Chunk> + Unpin) -> Result<Vec<String>> {
+    let reader = StreamReader::new(stream);
+    let mut archive = Archive::new(reader);
+    let mut entries = archive.entries().context("read entries from tar")?;
+
+    let mut files = Vec::new();
+    while let Some(entry) = entries.next().await {
+        let entry = unwrap_warn!(entry, continue, "read entry");
+        let path = unwrap_warn!(entry.path(), continue, "read entry path");
+        debug!(?path, "enumerate");
+        files.push(path.to_string_lossy().to_string());
+    }
+
+    Ok(files)
 }
 
 impl From<&Reference> for OciReference {
