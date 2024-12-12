@@ -58,7 +58,10 @@ powershell -c "irm https://github.com/fossas/circe/releases/latest/download/circ
 #       Accepts the same values as `docker` (e.g. `linux/amd64`, `darwin/arm64`, etc).
 #   --overwrite
 #       If the target directory already exists, overwrite it.
-#
+#   --username
+#       The username to use for authentication; "password" is also required if provided.
+#   --password
+#       The password to use for authentication; "username" is also required if provided.
 circe extract docker.io/contribsys/faktory:latest ./faktory --layers squash --platform linux/amd64
 ```
 

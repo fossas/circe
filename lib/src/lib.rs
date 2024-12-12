@@ -17,6 +17,36 @@ mod ext;
 pub mod registry;
 pub mod transform;
 
+/// Authentication method for a registry.
+#[derive(Debug, Clone, Default, Display)]
+pub enum Authentication {
+    /// No authentication
+    #[default]
+    #[display("none")]
+    None,
+
+    /// Basic authentication
+    #[display("basic:{username}")]
+    Basic {
+        /// The username
+        username: String,
+
+        /// The password
+        #[debug(skip)]
+        password: String,
+    },
+}
+
+impl Authentication {
+    /// Create an instance for basic authentication
+    pub fn basic(username: impl Into<String>, password: impl Into<String>) -> Self {
+        Self::Basic {
+            username: username.into(),
+            password: password.into(),
+        }
+    }
+}
+
 /// Platform represents the platform a container image is built for.
 /// This follows the OCI Image Spec's platform definition while also supporting
 /// Docker's platform string format (e.g. "linux/amd64").

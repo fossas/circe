@@ -23,7 +23,8 @@ use tracing::{debug, warn};
 use crate::{
     ext::PriorityFind,
     transform::{self, Chunk},
-    Digest, LayerDescriptor, LayerMediaType, LayerMediaTypeFlag, Platform, Reference, Version,
+    Authentication, Digest, LayerDescriptor, LayerMediaType, LayerMediaTypeFlag, Platform,
+    Reference, Version,
 };
 
 /// Each instance is a unique view of remote registry for a specific [`Platform`] and [`Reference`].
@@ -46,12 +47,16 @@ pub struct Registry {
 impl Registry {
     /// Create a new registry for a specific platform and reference.
     #[builder]
-    pub async fn new(platform: Option<Platform>, reference: Reference) -> Result<Self> {
+    pub async fn new(
+        auth: Option<Authentication>,
+        platform: Option<Platform>,
+        reference: Reference,
+    ) -> Result<Self> {
         let client = client(platform.clone());
         let reference = OciReference::from(&reference);
-
-        // Future improvement: support authentication.
-        let auth = RegistryAuth::Anonymous;
+        let auth = auth
+            .map(RegistryAuth::from)
+            .unwrap_or(RegistryAuth::Anonymous);
 
         client
             .auth(&reference, &auth, RegistryOperation::Pull)
@@ -311,6 +316,15 @@ impl TryFrom<OciDescriptor> for LayerDescriptor {
             media_type: LayerMediaType::from_str(&value.media_type).context("parse media type")?,
             size: value.size,
         })
+    }
+}
+
+impl From<Authentication> for RegistryAuth {
+    fn from(auth: Authentication) -> Self {
+        match auth {
+            Authentication::None => RegistryAuth::Anonymous,
+            Authentication::Basic { username, password } => RegistryAuth::Basic(username, password),
+        }
     }
 }
 

@@ -16,7 +16,6 @@ default-run = "circe"
 [dependencies]
 clap = { version = "4.5.23", features = ["derive"] }
 color-eyre = "0.6.3"
-tap = "1.0.1"
 tokio = { version = "1.42.0", features = ["full"] }
 tracing = "0.1.41"
 tracing-error = { version = "0.2.1" }
@@ -24,3 +23,4 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 tracing-tree = { version = "0.4.0" }
 circe_lib = { path = "../lib" }
 serde_json = "1.0.133"
+derive_more = { version = "1.0.0", features = ["debug"] }

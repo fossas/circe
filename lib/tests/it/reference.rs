@@ -13,6 +13,7 @@ fn parse(input: &str, expected: Reference) {
 
 #[test_case(Reference::builder().host("docker.io").repository("library/ubuntu").tag("latest").build(), "docker.io/library/ubuntu:latest"; "docker.io/library/ubuntu:latest")]
 #[test_case(Reference::builder().host("ghcr.io").repository("user/repo").digest(circe_lib::digest!("sha256", "123abc", 3)).build(), "ghcr.io/user/repo@sha256:123abc"; "ghcr.io/user/repo@sha256:123abc")]
+#[test_case(Reference::builder().host("ghcr.io").repository("fossas/project/app").tag("sha-e01ce6b").build(), "ghcr.io/fossas/project/app:sha-e01ce6b"; "ghcr.io/fossas/project/app:sha-e01ce6b")]
 #[test_case(Reference::builder().host("docker.io").repository("library/ubuntu").build(), "docker.io/library/ubuntu:latest"; "docker.io/library/ubuntu")]
 #[test]
 fn display(reference: Reference, expected: &str) {

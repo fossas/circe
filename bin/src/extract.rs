@@ -1,6 +1,7 @@
-use circe_lib::{registry::Registry, LayerDescriptor, Platform, Reference};
+use circe_lib::{registry::Registry, Authentication, LayerDescriptor, Platform, Reference};
 use clap::{Parser, ValueEnum};
 use color_eyre::eyre::{bail, Context, Result};
+use derive_more::Debug;
 use std::{path::PathBuf, str::FromStr};
 use tracing::{debug, info};
 
@@ -25,22 +26,26 @@ pub struct Options {
     ///
     /// If the image is multi-platform and this argument is not provided,
     /// the platform is chosen according to the following priority list:
-    ///
     /// 1. The first platform-independent image
-    ///
     /// 2. The current platform (if available)
-    ///
     /// 3. The `linux` platform for the current architecture
-    ///
     /// 4. The `linux` platform for the `amd64` architecture
-    ///
     /// 5. The first platform in the image manifest
-    #[arg(long, value_parser = Platform::from_str)]
+    #[arg(long, value_parser = Platform::from_str, verbatim_doc_comment)]
     platform: Option<Platform>,
 
     /// How to handle layers during extraction
     #[arg(long, default_value = "squash")]
     layers: Mode,
+
+    /// The username to use for authenticating to the registry
+    #[arg(long, requires = "password")]
+    username: Option<String>,
+
+    /// The password to use for authenticating to the registry
+    #[arg(long, requires = "username")]
+    #[debug(skip)]
+    password: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, Default, ValueEnum)]
@@ -64,10 +69,16 @@ pub enum Mode {
 pub async fn main(opts: Options) -> Result<()> {
     info!("extracting image");
 
+    let auth = match (opts.username, opts.password) {
+        (Some(username), Some(password)) => Authentication::basic(username, password),
+        _ => Authentication::default(),
+    };
+
     let output = canonicalize_output_dir(&opts.output_dir, opts.overwrite)?;
     let registry = Registry::builder()
         .maybe_platform(opts.platform)
         .reference(opts.image)
+        .auth(auth)
         .build()
         .await
         .context("configure remote registry")?;
