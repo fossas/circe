@@ -23,8 +23,8 @@ use tracing::{debug, warn};
 use crate::{
     ext::PriorityFind,
     transform::{self, Chunk},
-    Authentication, Digest, LayerDescriptor, LayerMediaType, LayerMediaTypeFlag, Platform,
-    Reference, Version,
+    Authentication, Digest, Filter, FilterMatch, Filters, LayerDescriptor, LayerMediaType,
+    LayerMediaTypeFlag, Platform, Reference, Version,
 };
 
 /// Each instance is a unique view of remote registry for a specific [`Platform`] and [`Reference`].
@@ -38,6 +38,14 @@ pub struct Registry {
     /// Authentication information for the registry.
     auth: RegistryAuth,
 
+    /// Layer filters.
+    /// Layers that match any filter are included in the set of layers processed by this registry.
+    layer_filters: Filters,
+
+    /// File filters.
+    /// Files that match any filter are included in the set of files processed by this registry.
+    file_filters: Filters,
+
     /// The client used to interact with the registry.
     #[debug(skip)]
     client: Client,
@@ -48,8 +56,21 @@ impl Registry {
     /// Create a new registry for a specific platform and reference.
     #[builder]
     pub async fn new(
+        /// Authentication information for the registry.
         auth: Option<Authentication>,
+
+        /// The platform to use for the registry.
         platform: Option<Platform>,
+
+        /// Filters for layers.
+        /// Layers that match any filter are included in the set of layers processed by this registry.
+        layer_filters: Option<Filters>,
+
+        /// Filters for files.
+        /// Files that match any filter are included in the set of files processed by this registry.
+        file_filters: Option<Filters>,
+
+        /// The reference to use for the registry.
         reference: Reference,
     ) -> Result<Self> {
         let client = client(platform.clone());
@@ -67,6 +88,8 @@ impl Registry {
             auth,
             client,
             reference,
+            layer_filters: layer_filters.unwrap_or_default(),
+            file_filters: file_filters.unwrap_or_default(),
         })
     }
 }
@@ -84,12 +107,17 @@ impl Registry {
         manifest
             .layers
             .into_iter()
+            .filter(|layer| self.layer_filters.matches(layer))
             .map(LayerDescriptor::try_from)
             .collect()
     }
 
     /// Pull the bytes of a layer from the registry in a stream.
     /// The `media_type` field of the [`LayerDescriptor`] can be used to determine how best to handle the content.
+    ///
+    /// Note: layer filters are not used by this function;
+    /// this is because the layer is already filtered by the [`Registry::layers`] method,
+    /// so this only matters if you create your own [`LayerDescriptor`] and pass it to this function.
     ///
     /// ## Layers explanation
     ///
@@ -184,25 +212,25 @@ impl Registry {
                 // while still supporting arbitrary flags.
                 match flags.as_slice() {
                     // No flags; this means the layer is uncompressed.
-                    [] => apply_tarball(stream, output).await,
+                    [] => apply_tarball(&self.file_filters, stream, output).await,
 
                     // The layer is compressed with zstd.
                     [LayerMediaTypeFlag::Zstd] => {
                         let stream = transform::zstd(stream);
-                        apply_tarball(stream, output).await
+                        apply_tarball(&self.file_filters, stream, output).await
                     }
 
                     // The layer is compressed with gzip.
                     [LayerMediaTypeFlag::Gzip] => {
                         let stream = transform::gzip(stream);
-                        apply_tarball(stream, output).await
+                        apply_tarball(&self.file_filters, stream, output).await
                     }
 
                     // The layer has a more complicated set of flags.
                     // For this, we fall back to the generic sequence operator.
                     _ => {
                         let stream = transform::sequence(stream, flags);
-                        apply_tarball(stream, output).await
+                        apply_tarball(&self.file_filters, stream, output).await
                     }
                 }
             }
@@ -210,7 +238,11 @@ impl Registry {
     }
 }
 
-async fn apply_tarball(stream: impl Stream<Item = Chunk> + Unpin, output: &Path) -> Result<()> {
+async fn apply_tarball(
+    path_filters: &Filters,
+    stream: impl Stream<Item = Chunk> + Unpin,
+    output: &Path,
+) -> Result<()> {
     let reader = StreamReader::new(stream);
     let mut archive = Archive::new(reader);
     let mut entries = archive.entries().context("read entries from tar")?;
@@ -245,6 +277,11 @@ async fn apply_tarball(stream: impl Stream<Item = Chunk> + Unpin, output: &Path)
         // Paths inside the container are relative to the root of the container;
         // we need to convert them to be relative to the output directory.
         let path = output.join(path);
+
+        if !path_filters.matches(&path) {
+            debug!(?path, "skip: path filter");
+            continue;
+        }
 
         // Whiteout files delete the file from the filesystem.
         if let Some(path) = is_whiteout(&path) {
@@ -325,6 +362,24 @@ impl From<Authentication> for RegistryAuth {
             Authentication::None => RegistryAuth::Anonymous,
             Authentication::Basic { username, password } => RegistryAuth::Basic(username, password),
         }
+    }
+}
+
+impl FilterMatch<&LayerDescriptor> for Filter {
+    fn matches(&self, value: &LayerDescriptor) -> bool {
+        self.matches(&value.digest.to_string())
+    }
+}
+
+impl FilterMatch<&OciDescriptor> for Filter {
+    fn matches(&self, value: &OciDescriptor) -> bool {
+        self.matches(&value.digest)
+    }
+}
+
+impl FilterMatch<&PathBuf> for Filter {
+    fn matches(&self, value: &PathBuf) -> bool {
+        self.matches(value.to_string_lossy())
     }
 }
 

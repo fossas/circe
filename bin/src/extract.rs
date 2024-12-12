@@ -1,4 +1,6 @@
-use circe_lib::{registry::Registry, Authentication, LayerDescriptor, Platform, Reference};
+use circe_lib::{
+    registry::Registry, Authentication, Filters, LayerDescriptor, Platform, Reference,
+};
 use clap::{Parser, ValueEnum};
 use color_eyre::eyre::{bail, Context, Result};
 use derive_more::Debug;
@@ -38,6 +40,55 @@ pub struct Options {
     #[arg(long, default_value = "squash")]
     layers: Mode,
 
+    /// Glob filters for layers to extract
+    ///
+    /// Filters are unix-style glob patterns, for example `sha256:1234*`
+    /// matches any layer with a sha256 digest starting with `1234`.
+    ///
+    /// You can provide this multiple times to provide multiple filters.
+    /// If filters are provided, only layers whose digest matches any filter are extracted.
+    #[arg(long, alias = "lg")]
+    layer_glob: Option<Vec<String>>,
+
+    /// Glob filters for files to extract
+    ///
+    /// Filters are unix-style glob patterns, for example `*.txt`
+    /// matches any file whose path ends with `.txt`.
+    /// Note that if you want to match regardless of directory depth
+    /// you must use `**` in the pattern, for example `**/*.txt` matches
+    /// any file with a `.txt` extension in any directory.
+    ///
+    /// Non-unicode paths are lossily parsed as unicode for the purpose of glob comparison;
+    /// invalid unicode segments are replaced with `U+FFFD` (�).
+    ///
+    /// You can provide this multiple times to provide multiple filters.
+    /// If filters are provided, only files whose path matches any filter are extracted.
+    #[arg(long, alias = "fg")]
+    file_glob: Option<Vec<String>>,
+
+    /// Regex filters for layers to extract
+    ///
+    /// Filters are regex patterns, for example `sha256:1234.*`
+    /// matches any layer with a sha256 digest starting with `1234`.
+    ///
+    /// You can provide this multiple times to provide multiple filters.
+    /// If filters are provided, only layers whose digest matches any filter are extracted.
+    #[arg(long, alias = "lr")]
+    layer_regex: Option<Vec<String>>,
+
+    /// Regex filters for files to extract
+    ///
+    /// Filters are regex patterns, for example `.*\.txt$`
+    /// matches any file whose path ends with `.txt`.
+    ///
+    /// Non-unicode paths are lossily parsed as unicode for the purpose of regex comparison;
+    /// invalid unicode segments are replaced with `U+FFFD` ().
+    ///
+    /// You can provide this multiple times to provide multiple filters.
+    /// If filters are provided, only files whose path matches any filter are extracted.
+    #[arg(long, alias = "fr")]
+    file_regex: Option<Vec<String>>,
+
     /// The username to use for authenticating to the registry
     #[arg(long, requires = "password")]
     username: Option<String>,
@@ -74,11 +125,18 @@ pub async fn main(opts: Options) -> Result<()> {
         _ => Authentication::default(),
     };
 
+    let layer_globs = Filters::parse_glob(opts.layer_glob.into_iter().flatten())?;
+    let file_globs = Filters::parse_glob(opts.file_glob.into_iter().flatten())?;
+    let layer_regexes = Filters::parse_regex(opts.layer_regex.into_iter().flatten())?;
+    let file_regexes = Filters::parse_regex(opts.file_regex.into_iter().flatten())?;
+
     let output = canonicalize_output_dir(&opts.output_dir, opts.overwrite)?;
     let registry = Registry::builder()
         .maybe_platform(opts.platform)
         .reference(opts.image)
         .auth(auth)
+        .layer_filters(layer_globs + layer_regexes)
+        .file_filters(file_globs + file_regexes)
         .build()
         .await
         .context("configure remote registry")?;

@@ -5,12 +5,12 @@ use color_eyre::{
     eyre::{self, bail, eyre, Context},
     Result, Section, SectionExt,
 };
-use derive_more::derive::{Debug, Display};
+use derive_more::derive::{Debug, Display, From};
 use enum_assoc::Assoc;
 use itertools::Itertools;
-use std::str::FromStr;
+use std::{borrow::Cow, ops::Add, str::FromStr};
 use strum::{AsRefStr, EnumIter, IntoEnumIterator};
-use tap::Pipe;
+use tap::{Pipe, Tap};
 use tracing::debug;
 
 mod ext;
@@ -685,5 +685,154 @@ impl FromStr for LayerMediaTypeFlag {
 impl std::fmt::Display for LayerMediaTypeFlag {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_ref())
+    }
+}
+
+/// Trait for filtering.
+pub trait FilterMatch<T> {
+    /// Report whether the filter matches the given value.
+    /// Values that match are included in program operation.
+    fn matches(&self, value: T) -> bool;
+}
+
+/// A set of filters; if any filter in the set matches, the value is considered matched.
+/// As a special case, if no filters are provided, the value is also considered matched.
+#[derive(Debug, Clone, From, Default)]
+pub struct Filters(Vec<Filter>);
+
+impl Filters {
+    /// Create glob filters from the given strings.
+    pub fn parse_glob(globs: impl IntoIterator<Item = impl AsRef<str>>) -> Result<Self> {
+        globs
+            .into_iter()
+            .map(|s| Filter::parse_glob(s.as_ref()))
+            .collect::<Result<Vec<_>>>()
+            .map(Self)
+    }
+
+    /// Create regex filters from the given strings.
+    pub fn parse_regex(regexes: impl IntoIterator<Item = impl AsRef<str>>) -> Result<Self> {
+        regexes
+            .into_iter()
+            .map(|s| Filter::parse_regex(s.as_ref()))
+            .collect::<Result<Vec<_>>>()
+            .map(Self)
+    }
+}
+
+impl Add<Filter> for Filters {
+    type Output = Self;
+
+    fn add(mut self, filter: Filter) -> Self {
+        self.0.push(filter);
+        self
+    }
+}
+
+impl Add<Filters> for Filters {
+    type Output = Filters;
+
+    fn add(mut self, filters: Filters) -> Filters {
+        self.0.extend(filters.0);
+        self
+    }
+}
+
+impl<'a, T> FilterMatch<&'a T> for Filters
+where
+    Filter: FilterMatch<&'a T>,
+{
+    fn matches(&self, value: &'a T) -> bool {
+        self.0.is_empty() || self.0.iter().any(|filter| filter.matches(value))
+    }
+}
+
+/// Specifies general filtering options.
+#[derive(Debug, Clone, From)]
+pub enum Filter {
+    /// A regular expression to filter
+    Regex(Regex),
+
+    /// A glob to filter
+    Glob(Glob),
+}
+
+impl Filter {
+    /// Create a glob filter from the given string.
+    pub fn parse_glob(s: &str) -> Result<Self> {
+        Glob::from_str(s).map(Self::Glob)
+    }
+
+    /// Create a regex filter from the given string.
+    pub fn parse_regex(s: &str) -> Result<Self> {
+        Regex::from_str(s).map(Self::Regex)
+    }
+}
+
+impl FilterMatch<String> for Filter {
+    fn matches(&self, value: String) -> bool {
+        self.matches(&value)
+    }
+}
+
+impl FilterMatch<&String> for Filter {
+    fn matches(&self, value: &String) -> bool {
+        self.matches(value.as_str())
+    }
+}
+
+impl FilterMatch<Cow<'_, str>> for Filter {
+    fn matches(&self, value: Cow<'_, str>) -> bool {
+        self.matches(value.as_ref())
+    }
+}
+
+impl FilterMatch<&str> for Filter {
+    fn matches(&self, value: &str) -> bool {
+        match self {
+            Filter::Regex(regex) => regex.matches(value),
+            Filter::Glob(glob) => glob.matches(value),
+        }
+    }
+}
+
+/// A regular expression filter.
+#[derive(Debug, Clone)]
+pub struct Regex(regex::Regex);
+
+impl FilterMatch<&str> for Regex {
+    fn matches(&self, value: &str) -> bool {
+        self.0
+            .is_match(value)
+            .tap(|matched| debug!(?value, expr = ?self.0, %matched, "regex: check filter"))
+    }
+}
+
+impl FromStr for Regex {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        regex::Regex::new(s)
+            .map_err(|e| eyre!("invalid regex: {e}"))
+            .map(Self)
+    }
+}
+
+/// A glob filter.
+#[derive(Debug, Clone)]
+pub struct Glob(String);
+
+impl FilterMatch<&str> for Glob {
+    fn matches(&self, value: &str) -> bool {
+        glob_match::glob_match(&self.0, value)
+            .tap(|matched| debug!(?value, glob = ?self.0, %matched, "glob: check filter"))
+    }
+}
+
+impl FromStr for Glob {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.to_string().pipe(Self).pipe(Ok)
     }
 }
