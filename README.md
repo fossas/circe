@@ -22,7 +22,7 @@ extracts and examines the contents of containers.
 
 ## macOS or Linux
 ```shell
-curl https://github.com/fossas/circe/releases/latest/download/circe-installer.sh | bash
+curl -LsSf https://github.com/fossas/circe/releases/latest/download/circe-installer.sh | bash
 ```
 
 ## Windows
