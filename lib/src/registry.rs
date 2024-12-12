@@ -18,7 +18,7 @@ use oci_client::{
 use os_str_bytes::OsStrBytesExt;
 use tokio_tar::Archive;
 use tokio_util::io::StreamReader;
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 use crate::{
     ext::PriorityFind,
@@ -244,9 +244,15 @@ async fn apply_tarball(stream: impl Stream<Item = Chunk> + Unpin, output: &Path)
         // Whiteout files delete the file from the filesystem.
         if let Some(path) = is_whiteout(&path) {
             unwrap_warn!(tokio::fs::remove_file(&path).await, "whiteout: {path:?}");
-            info!(?path, "whiteout");
+            debug!(?path, "whiteout");
             continue;
         }
+
+        // Future improvement: symlinks are unpacked with the same destination as written in the actual container;
+        // this means e.g. they can link to files outside of the output directory
+        // (the example case I found was in `usr/bin`, linking to `/bin/`).
+        // I don't _think_ this matters for now given how we're using this today, but it's technically incorrect.
+        // To fix this we need to re-implement the logic in `unpack_in` to rewrite symlink destinations.
 
         // Otherwise, apply the file as normal.
         // Both _new_ and _changed_ files are handled the same way:
@@ -256,7 +262,7 @@ async fn apply_tarball(stream: impl Stream<Item = Chunk> + Unpin, output: &Path)
             continue;
         }
 
-        info!(?path, "apply");
+        debug!(?path, "apply");
     }
 
     Ok(())

@@ -94,3 +94,25 @@ The other options are:
 > The `separate` option also writes a `layers.json` file in the target directory,
 > which is a JSON-encoded array of layer directory names.
 > This array specifies the order of layer application in the image.
+
+## troubleshooting
+
+Set `RUST_LOG=debug` to get more detailed logs, and `RUST_LOG=trace` to get extremely detailed logs.
+You can also filter to logs in a specific module (such as `circe` or `circe_lib`)
+by setting `RUST_LOG=circe=debug` or `RUST_LOG=circe_lib=debug`.
+
+> [!TIP]
+> In macOS and Linux, you can apply environment variables to a command without changing your environment;
+> for example: `RUST_LOG=trace circe ...`.
+
+### future improvements
+
+These are somewhat "known issues", but mostly "things to keep in mind" when using `circe`.
+Ideally we'll fix these in the future; feel free to make a contribution or open an issue letting us know if one of these is blocking you.
+
+- [ ] circe does not currently download layers concurrently.
+  Since network transfer is effectively always the bottleneck, adding concurrent downloads would likely speed up `circe` significantly.
+  That being said, as of our tests today `circe` is already about as fast as `docker pull && docker save`.
+- [ ] symlinks are unpacked with the same destination as written in the actual container.
+  This means e.g. they can link to files outside of the output directory
+  (the example case I found was files in `usr/bin`, linking to `/bin/`).

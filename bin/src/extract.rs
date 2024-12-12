@@ -2,8 +2,7 @@ use circe_lib::{registry::Registry, LayerDescriptor, Platform, Reference};
 use clap::{Parser, ValueEnum};
 use color_eyre::eyre::{bail, Context, Result};
 use std::{path::PathBuf, str::FromStr};
-use tap::Pipe;
-use tracing::info;
+use tracing::{debug, info};
 
 #[derive(Debug, Parser)]
 pub struct Options {
@@ -63,7 +62,7 @@ pub enum Mode {
 
 #[tracing::instrument]
 pub async fn main(opts: Options) -> Result<()> {
-    info!("Extracting image");
+    info!("extracting image");
 
     let output = canonicalize_output_dir(&opts.output_dir, opts.overwrite)?;
     let registry = Registry::builder()
@@ -92,6 +91,7 @@ async fn squash(
     info!("enumerated {count} {}", plural(count, "layer", "layers"));
 
     for (descriptor, layer) in layers.zip(1usize..) {
+        debug!(?descriptor, layer, count, "applying layer");
         if count > 0 {
             info!(layer = %descriptor, "applying layer {layer} of {count}");
         } else {
@@ -104,6 +104,7 @@ async fn squash(
             .with_context(|| format!("apply layer {descriptor} to {output:?}"))?;
     }
 
+    info!("finished applying layers");
     Ok(())
 }
 
@@ -117,6 +118,7 @@ async fn separate(
     info!("enumerated {count} {}", plural(count, "layer", "layers"));
 
     for (descriptor, layer) in layers.iter().zip(1usize..) {
+        debug!(?descriptor, layer, count, "applying layer");
         let output = output.join(descriptor.digest.as_hex());
         if count > 0 {
             info!(layer = %descriptor, "applying layer {layer} of {count}");
@@ -130,16 +132,19 @@ async fn separate(
             .with_context(|| format!("apply layer {descriptor} to {output:?}"))?;
     }
 
+    info!("finished applying layers");
+    let index_destination = output.join("layers.json");
     let index = layers
         .into_iter()
         .map(|l| l.digest.as_hex())
-        .collect::<Vec<_>>()
-        .pipe_ref(serde_json::to_string_pretty)
-        .context("serialize layer index")?;
+        .collect::<Vec<_>>();
 
-    tokio::fs::write(output.join("layers.json"), index)
+    debug!(?index, ?index_destination, "serializing layer index");
+    let index = serde_json::to_string_pretty(&index).context("serialize layer index")?;
+    tokio::fs::write(&index_destination, index)
         .await
         .context("write layer index")
+        .inspect(|_| info!(path = ?index_destination, "layer index written"))
 }
 
 /// Given a (probably relative) path to a directory, canonicalize it to an absolute path.
