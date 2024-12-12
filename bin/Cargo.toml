@@ -11,7 +11,13 @@ documentation = "https://docs.rs/circe"
 readme = "README.md"
 keywords = ["cli", "dependencies", "containers", "images", "oci"]
 categories = ["command-line-utilities", "development-tools"]
-default-run = "circe-bin"
+default-run = "circe"
+
+[[bin]]
+name = "circe"
+path = "src/main.rs"
+test = false
+bench = false
 
 [dependencies]
 clap = { version = "4.5.23", features = ["derive"] }
