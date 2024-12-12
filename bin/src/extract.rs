@@ -1,4 +1,4 @@
-use circe::{registry::Registry, LayerDescriptor, Platform, Reference};
+use circe_lib::{registry::Registry, LayerDescriptor, Platform, Reference};
 use clap::{Parser, ValueEnum};
 use color_eyre::eyre::{bail, Context, Result};
 use std::{path::PathBuf, str::FromStr};

@@ -1,4 +1,4 @@
-use circe::Platform;
+use circe_lib::Platform;
 use simple_test_case::test_case;
 
 #[test_case("linux/amd64", Platform::linux_amd64(); "linux/amd64")]

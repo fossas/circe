@@ -227,7 +227,7 @@ macro_rules! digest {
         const HASH: [u8; $size] = hex_magic::hex!($hex);
         static_assertions::const_assert_ne!(HASH.len(), 0);
         static_assertions::const_assert_ne!($algorithm.len(), 0);
-        circe::Digest {
+        circe_lib::Digest {
             algorithm: $algorithm.to_string(),
             hash: HASH.to_vec(),
         }

@@ -1,5 +1,5 @@
 use async_compression::tokio::bufread::{GzipEncoder, ZstdEncoder};
-use circe::{
+use circe_lib::{
     transform::{self, Chunk},
     LayerMediaTypeFlag,
 };
