@@ -6,10 +6,12 @@ use color_eyre::{
     Result, Section, SectionExt,
 };
 use derive_more::derive::{Debug, Display};
+use enum_assoc::Assoc;
 use itertools::Itertools;
 use std::str::FromStr;
 use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 use tap::Pipe;
+use tracing::debug;
 
 mod ext;
 pub mod registry;
@@ -489,53 +491,72 @@ impl std::fmt::Display for LayerDescriptor {
 /// Media types for OCI container image layers.
 ///
 /// Each entry in this enum is a unique media type "base"; some of them then can have flags applied.
-/// For example, even though `Foreign` is a valid [`LayerMediaTypeFlag`], [`LayerMediaType::DockerForeign`]
-/// is distinct from [`LayerMediaType::Docker`] because it is an entirely different media type.
+/// Note: some media types that are fully compatible are handled with [`LayerMediaType::compatibility_matrix`].
 ///
 /// Spec reference: https://github.com/opencontainers/image-spec/blob/main/media-types.md
-#[derive(Debug, Clone, PartialEq, Eq, AsRefStr, EnumIter)]
+#[derive(Debug, Clone, PartialEq, Eq, AsRefStr, EnumIter, Assoc)]
 pub enum LayerMediaType {
-    /// A standard Docker container layer in gzipped tar format.
-    ///
-    /// These layers contain filesystem changes that make up the container image.
-    /// Each layer represents a Dockerfile instruction or equivalent build step.
-    #[strum(serialize = "application/vnd.docker.image.rootfs.diff.tar.gzip")]
-    Docker,
-
-    /// A Docker container layer that was built for a different architecture or operating system.
-    ///
-    /// Foreign layers are used in multi-platform images where the same image can contain
-    /// layers for different platforms (e.g. linux/amd64 vs linux/arm64).
-    #[strum(serialize = "application/vnd.docker.image.rootfs.foreign.diff.tar.gzip")]
-    DockerForeign,
-
     /// A standard OCI container layer.
     #[strum(serialize = "application/vnd.oci.image.layer.v1.tar")]
     Oci(Vec<LayerMediaTypeFlag>),
-
-    /// An OCI container layer that has restrictions on distribution.
-    ///
-    /// Non-distributable layers typically contain licensed content, proprietary code,
-    /// or other material that cannot be freely redistributed.
-    /// Registry operators are not required to push or pull these layers.
-    /// Instead, the layer data might need to be obtained through other means
-    /// (e.g. direct download from a vendor).
-    ///
-    /// These are officially marked deprecated in the OCI spec, along with the directive
-    /// that clients should download the layers as usual:
-    /// https://github.com/opencontainers/image-spec/blob/main/layer.md#non-distributable-layers
-    #[strum(serialize = "application/vnd.oci.image.layer.nondistributable.v1.tar")]
-    OciNonDistributable(Vec<LayerMediaTypeFlag>),
 }
 
 impl LayerMediaType {
+    /// Create the given media type with the given flags.
+    fn oci(flags: impl IntoIterator<Item = LayerMediaTypeFlag>) -> Self {
+        Self::Oci(flags.into_iter().collect())
+    }
+
     /// Overwrite the flags for the media type.
     fn replace_flags(self, flags: Vec<LayerMediaTypeFlag>) -> Self {
         match self {
             LayerMediaType::Oci(_) => LayerMediaType::Oci(flags),
-            LayerMediaType::OciNonDistributable(_) => LayerMediaType::OciNonDistributable(flags),
-            LayerMediaType::Docker | LayerMediaType::DockerForeign => self,
         }
+    }
+
+    /// Parse the media type from the known compatibility matrix.
+    ///
+    /// Reference: https://github.com/opencontainers/image-spec/blob/main/media-types.md#compatibility-matrix
+    /// Note that this is only concerned with _layer_ media types.
+    fn compatibility_matrix(s: &str) -> Result<Option<Self>> {
+        // Some types are directly convertible.
+        match s {
+            "application/vnd.docker.image.rootfs.diff.tar.gzip" => {
+                return Self::oci([LayerMediaTypeFlag::Gzip]).pipe(Some).pipe(Ok);
+            }
+            "application/vnd.docker.image.rootfs.foreign.diff.tar.gzip" => {
+                return Self::oci([LayerMediaTypeFlag::Gzip, LayerMediaTypeFlag::Foreign])
+                    .pipe(Some)
+                    .pipe(Ok);
+            }
+            _ => {}
+        }
+
+        // Some need to have parsed flags.
+        let (base, flags) = s.split_once('+').unwrap_or((s, ""));
+        match base {
+            // An OCI container layer that has restrictions on distribution.
+            //
+            // Non-distributable layers typically contain licensed content, proprietary code,
+            // or other material that cannot be freely redistributed.
+            // Registry operators are not required to push or pull these layers.
+            // Instead, the layer data might need to be obtained through other means
+            // (e.g. direct download from a vendor).
+            //
+            // These are officially marked deprecated in the OCI spec, along with the directive
+            // that clients should download the layers as usual:
+            // https://github.com/opencontainers/image-spec/blob/main/layer.md#non-distributable-layers
+            //
+            // For this reason, they're part of the "compatibility matrix" for OCI layers,
+            // and are simply translated to the standard OCI layer media type.
+            "application/vnd.oci.image.layer.nondistributable.v1.tar" => {
+                let flags = LayerMediaTypeFlag::parse_set(flags).context("parse flags")?;
+                return Self::Oci(flags).pipe(Some).pipe(Ok);
+            }
+            _ => {}
+        }
+
+        Ok(None)
     }
 }
 
@@ -543,28 +564,26 @@ impl FromStr for LayerMediaType {
     type Err = eyre::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (base, flags) = s.split_once('+').unwrap_or((s, ""));
-        for media_type in LayerMediaType::iter() {
-            if base == media_type.as_ref() {
-                return match media_type {
-                    // Docker layers don't have flags.
-                    LayerMediaType::Docker | LayerMediaType::DockerForeign => Ok(media_type),
+        if let Some(mt) = Self::compatibility_matrix(s)? {
+            debug!("translating layer media type from '{s}' to '{mt}' with compatibility matrix");
+            return Ok(mt);
+        }
 
-                    // OCI layers have flags; handle both bases the same way.
-                    mt @ LayerMediaType::Oci(_) | mt @ LayerMediaType::OciNonDistributable(_) => {
-                        flags
-                            .split('+')
-                            .map(LayerMediaTypeFlag::from_str)
-                            .try_collect()
-                            .map(|flags| mt.replace_flags(flags))
+        let (base, flags) = s.split_once('+').unwrap_or((s, ""));
+        for mt in LayerMediaType::iter() {
+            if base == mt.as_ref() {
+                return match mt {
+                    LayerMediaType::Oci(_) => {
+                        let flags = LayerMediaTypeFlag::parse_set(flags)?;
+                        Ok(mt.replace_flags(flags))
                     }
                 };
             }
 
             // It's always possible for a future media type to be added that has a plus sign;
             // this is a fallback to catch that case.
-            if s == media_type.as_ref() {
-                return Ok(media_type);
+            if s == mt.as_ref() {
+                return Ok(mt);
             }
         }
         bail!("unknown media type: {s}");
@@ -573,7 +592,15 @@ impl FromStr for LayerMediaType {
 
 impl std::fmt::Display for LayerMediaType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_ref())
+        write!(f, "{}", self.as_ref())?;
+        match self {
+            LayerMediaType::Oci(flags) => {
+                for flag in flags {
+                    write!(f, "+{flag}")?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -608,6 +635,13 @@ pub enum LayerMediaTypeFlag {
     Gzip,
 }
 
+impl LayerMediaTypeFlag {
+    /// Parse a string into a set of flags, separated by `+` characters.
+    fn parse_set(s: &str) -> Result<Vec<Self>> {
+        s.split('+').map(Self::from_str).try_collect()
+    }
+}
+
 impl FromStr for LayerMediaTypeFlag {
     type Err = eyre::Error;
 
@@ -615,5 +649,11 @@ impl FromStr for LayerMediaTypeFlag {
         Self::iter()
             .find(|flag| flag.as_ref() == s)
             .ok_or_else(|| eyre!("unknown flag: {s}"))
+    }
+}
+
+impl std::fmt::Display for LayerMediaTypeFlag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_ref())
     }
 }

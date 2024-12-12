@@ -123,9 +123,8 @@ impl Registry {
     /// layers to the same directory.
     ///
     /// As such the following edge cases are handled as follows:
-    /// - Foreign layers are skipped, as they would if you ran `docker pull`.
-    /// - Non-distributable layers are attempted to be applied, but are skipped if they fail.
-    /// - Standard layers are applied as normal; if they fail they are skipped.
+    /// - Foreign layers are treated as no-ops, as they would if you ran `docker pull`.
+    /// - Standard layers are applied as normal.
     ///
     /// If you wish to customize the behavior, use [`Registry::pull_layer`] directly instead.
     ///
@@ -163,26 +162,8 @@ impl Registry {
 
         // Applying the layer requires interpreting the layer's media type.
         match &layer.media_type {
-            // Foreign docker layers are skipped, as they would if you ran `docker pull`.
-            LayerMediaType::DockerForeign => {
-                warn!("skip: foreign docker layer");
-                Ok(())
-            }
-
-            // Docker layers are applied the same as OCI layers:
-            // - They have the same whiteout semantics
-            // - The have the same behavior for new or changed files
-            //
-            // The main difference is that Docker layers have a specific transport format:
-            // they're always gzipped tarballs.
-            LayerMediaType::Docker => {
-                let stream = transform::gzip(stream);
-                apply_tarball(stream, output).await
-            }
-
-            // Standard OCI layers are applied as normal.
-            // Reminder that per the OCI spec, clients should attempt to download and apply "non-distributable" layers.
-            LayerMediaType::Oci(flags) | LayerMediaType::OciNonDistributable(flags) => {
+            // Standard OCI layers.
+            LayerMediaType::Oci(flags) => {
                 // Foreign layers are skipped, as they would if you ran `docker pull`.
                 // This causes an extra iteration over the flags for layers that aren't foreign,
                 // but the flag count is small and this saves us the complexity of setting up layer transforms
