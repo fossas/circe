@@ -1,8 +1,10 @@
-[package]
-name = "template-rust"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = ["bin", "lib"]
+resolver = "2"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[profile.release]
+strip = true
 
-[dependencies]
+[profile.dist]
+inherits = "release"
+lto = "thin"
