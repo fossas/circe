@@ -63,14 +63,34 @@ if this is not realistic at minimum every non-bugfix release **must** ensure dep
 > [!TIP]
 > Requires `cargo-release` and `git-cliff` to be installed.
 
-Use `cargo release`:
-```
-cargo release <VERSION>     # Review the planned actions
-cargo release <VERSION> -x  # Execute the planned actions
-```
+Use `cargo release` to create a release.
+Since we cannot push to `main` directly, perform the steps below:
 
-This performs several steps:
-- Updates `version` fields in crates.
-- Updates `CHANGELOG.md` with the new release (generated with `git cliff` from commit history).
-- Creates a new tag.
-- Pushes the new tag and updated `main` branch to the remote.
+```shell
+# Choose a version. It should be valid semver.
+# Also, choose a branch name. A good default is `prep/$VERSION`.
+VERSION=<VERSION>
+BRANCH="prep/$VERSION"
+
+# Make a branch for release prep and check it out.
+git checkout -b $BRANCH
+
+# Have cargo-release create the release.
+# This does several things:
+# - Validates that the git index is clean
+# - Updates version numbers in the crates
+# - Generates the changelog using `git-cliff`
+# - Creates a commit with the changes
+# - Pushes the branch to the remote
+cargo release --no-publish --no-tag --allow-branch=$BRANCH $VERSION
+
+# Open a PR; once tests pass and reviewers approve, merge to main and come back here for the final step.
+# NOTE: We are here; this PR was created by this step.
+gh pr create --base main --template .github/release_template.md --title "Prepare to release $VERSION"
+
+# Finally, run `cargo release` on the main branch.
+# This doesn't create new commits; it just tags the commit and pushes the tag.
+git checkout main
+git pull
+cargo release -x
+```
