@@ -6,7 +6,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use color_eyre::eyre::{Context, Result};
+use color_eyre::eyre::{Context, OptionExt, Result};
 use derive_more::Debug;
 use futures_lite::{Stream, StreamExt};
 use oci_client::{
@@ -16,7 +16,9 @@ use oci_client::{
     Client, Reference as OciReference, RegistryOperation,
 };
 use os_str_bytes::OsStrBytesExt;
-use tokio_tar::Archive;
+use tap::Pipe;
+use tokio::io::AsyncRead;
+use tokio_tar::{Archive, Entry};
 use tokio_util::io::StreamReader;
 use tracing::{debug, warn};
 
@@ -344,6 +346,22 @@ async fn apply_tarball(
             continue;
         }
 
+        // The tar library mostly handles symlinks properly, but still allows them to link to absolute paths.
+        // This doesn't technically break anything from a security standpoint, but might for analysis.
+        // Intercept its handling of absolute symlinks to handle this case.
+        if entry.header().entry_type().is_symlink() {
+            let handled = unwrap_warn!(
+                safe_symlink(&entry, output).await,
+                continue,
+                "create symlink {path:?}"
+            );
+
+            // But if the function didn't handle it, fall back to the default behavior.
+            if handled {
+                continue;
+            }
+        }
+
         // Future improvement: symlinks are unpacked with the same destination as written in the actual container;
         // this means e.g. they can link to files outside of the output directory
         // (the example case I found was in `usr/bin`, linking to `/bin/`).
@@ -379,6 +397,115 @@ async fn enumerate_tarball(stream: impl Stream<Item = Chunk> + Unpin) -> Result<
     }
 
     Ok(files)
+}
+
+/// Special handling for symlinks that link to an absolute path.
+/// It effectively forces the destination into a path relative to the output directory.
+///
+/// Returns true if the symlink was handled;
+/// false if the symlink should fall back to standard handling from `async_tar`.
+async fn safe_symlink<R: AsyncRead + Unpin>(entry: &Entry<R>, dir: &Path) -> Result<bool> {
+    let header = entry.header();
+    let kind = header.entry_type();
+    if !kind.is_symlink() {
+        return Ok(false);
+    }
+
+    let link = entry.path().context("read symlink source")?;
+    let target = header
+        .link_name()
+        .context("read symlink target")?
+        .ok_or_eyre("no symlink target")?;
+
+    // If the target is relative, we should let `async_tar` handle it;
+    // this function only needs to intercept absolute symlinks.
+    if !target.is_absolute() {
+        return Ok(false);
+    }
+
+    let safe_link = dir.join(&link);
+    let safe_target = dir.join(strip_root(&target));
+
+    let rel_target = compute_relative(&safe_link, &safe_target)
+        .with_context(|| format!("compute relative path from {safe_link:?} to {safe_target:?}"))?;
+    tracing::info!(
+        ?link,
+        ?target,
+        ?safe_link,
+        ?safe_target,
+        ?rel_target,
+        "create symlink"
+    );
+
+    if let Some(parent) = safe_link.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .context("create parent directory")?;
+    }
+
+    symlink(&rel_target, &safe_link)
+        .await
+        .map(|_| true)
+        .with_context(|| {
+            format!("create symlink from {safe_link:?} to {safe_target:?} as {rel_target:?}")
+        })
+}
+
+fn compute_relative(src: &Path, dst: &Path) -> Result<PathBuf> {
+    let common_prefix = src
+        .components()
+        .zip(dst.components())
+        .by_ref()
+        .take_while(|(src, dst)| src == dst)
+        .map(|(src, _)| src)
+        .collect::<PathBuf>();
+
+    let src_rel = src
+        .strip_prefix(&common_prefix)
+        .context("strip common prefix from src")?;
+    let dst_rel = dst
+        .strip_prefix(&common_prefix)
+        .context("strip common prefix from dst")?;
+
+    // `bridge` is the path from the source to the common prefix.
+    let bridge = src_rel
+        .components()
+        .skip(1)
+        .map(|_| "..")
+        .collect::<PathBuf>();
+    let rel = bridge.join(dst_rel);
+
+    // `.` indicates that the source and destination are the same file.
+    if rel.to_string_lossy().is_empty() {
+        Ok(PathBuf::from("."))
+    } else {
+        Ok(rel)
+    }
+}
+
+/// Strips any root and prefix from a path, if they exist.
+fn strip_root(path: impl AsRef<Path>) -> PathBuf {
+    path.as_ref()
+        .components()
+        .filter(|c| match c {
+            std::path::Component::Prefix(_) => false,
+            std::path::Component::RootDir => false,
+            _ => true,
+        })
+        .pipe(PathBuf::from_iter)
+}
+
+#[cfg(windows)]
+async fn symlink(src: &Path, dst: &Path) -> std::io::Result<()> {
+    let (src, dst) = (src.to_owned(), dst.to_owned());
+    tokio::task::spawn_blocking(|| std::os::windows::fs::symlink_file(src, dst))
+        .await
+        .expect("join tokio task")
+}
+
+#[cfg(any(unix, target_os = "redox"))]
+async fn symlink(src: &Path, dst: &Path) -> std::io::Result<()> {
+    tokio::fs::symlink(src, dst).await
 }
 
 impl From<&Reference> for OciReference {
@@ -544,6 +671,8 @@ const fn go_arch() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
+    use simple_test_case::test_case;
 
     #[test]
     fn test_is_whiteout() {
@@ -552,5 +681,17 @@ mod tests {
             is_whiteout(Path::new(".wh.foo")),
             Some(PathBuf::from("foo"))
         );
+    }
+
+    #[test_case(Path::new("/a/b/c"), Path::new("/a/b/d/e/f"), PathBuf::from("../d/e/f"); "one_level")]
+    #[test_case(Path::new("/usr/local/bin/ls"), Path::new("/bin/ls"), PathBuf::from("../../../../bin/ls"); "usr_local_bin_to_bin")]
+    #[test_case(Path::new("/usr/local/bin/ls"), Path::new("/usr/bin/ls"), PathBuf::from("../../../bin/ls"); "usr_local_bin_to_usr_bin")]
+    #[test_case(Path::new("/usr/local/bin/ls"), Path::new("/usr/local/bin/ls"), PathBuf::from("."); "same_file")]
+    #[test_case(Path::new("/usr/local/bin/eza"), Path::new("/usr/local/bin/ls"), PathBuf::from("./ls"); "same_dir")]
+    #[tokio::test]
+    async fn compute_relative(src: &Path, dst: &Path, expected: PathBuf) -> Result<()> {
+        let relative = compute_relative(src, dst)?;
+        pretty_assertions::assert_eq!(relative, expected);
+        Ok(())
     }
 }

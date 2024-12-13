@@ -157,6 +157,3 @@ Ideally we'll fix these in the future; feel free to make a contribution or open 
 - [ ] circe does not currently download layers concurrently.
   Since network transfer is effectively always the bottleneck, adding concurrent downloads would likely speed up `circe` significantly.
   That being said, as of our tests today `circe` is already about as fast as `docker pull && docker save`.
-- [ ] symlinks are unpacked with the same destination as written in the actual container.
-  This means e.g. they can link to files outside of the output directory
-  (the example case I found was files in `usr/bin`, linking to `/bin/`).
