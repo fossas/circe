@@ -8,17 +8,19 @@ _Released: 2024-12-13_
 
 - *(circe)* Make viewable by `dist`
 
-### 📚 Documentation
-
-- Add release process
-
-## [v0.3.2](https://github.com/fossas/circe/releases/tag/v0.3.2)
-
 ### ✨ General
 
 - Support `--layers squash-other`, add colors to clap
 - Ensure crates are not published to crates.io
 - Configure for `cargo release`
+
+### 📚 Documentation
+
+- Add release process
+
+### ⚙️ Miscellaneous Tasks
+
+- Changelog fixup
 
 ## [v0.3.1](https://github.com/fossas/circe/releases/tag/v0.3.1)
 

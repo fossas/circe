@@ -25,7 +25,7 @@ cargo release --no-publish --no-tag --allow-branch=$BRANCH $VERSION
 
 # Open a PR; once tests pass and reviewers approve, merge to main and come back here for the final step.
 # NOTE: We are here; this PR was created by this step.
-gh pr create --base main --template .github/release_template.md --title "Prepare to release $VERSION"
+gh pr create --base main --body-file .github/release_template.md --title "Prepare to release $VERSION"
 
 # Finally, run `cargo release` on the main branch.
 # This doesn't create new commits; it just tags the commit and pushes the tag.
