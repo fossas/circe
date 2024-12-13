@@ -1,4 +1,10 @@
 
+# v0.3.2
+
+- General: Add color to CLI output.
+- `extract`: Add `--squash-other` mode.
+  - `--layers squash-other`: Squash all layers other than the base layer.
+
 # v0.3.1
 
 - `extract`: absolute symlinks are now correctly made relative to the target directory.

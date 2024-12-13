@@ -55,6 +55,7 @@ Extracts the contents of the image to disk.
 # Options for `circe extract`:
 #   --layers
 #       squash: Combines all layers into a single layer (default).
+#       squash-other: Combines all layers except the base layer into a single layer.
 #       base: Excludes all layers except the base layer.
 #       separate: Exports each layer in a separate subdirectory.
 #   --platform

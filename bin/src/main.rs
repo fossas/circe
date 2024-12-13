@@ -1,4 +1,7 @@
-use clap::Parser;
+use clap::{
+    builder::{styling::AnsiColor, Styles},
+    Parser,
+};
 use color_eyre::eyre::Result;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{self, prelude::*};
@@ -6,7 +9,7 @@ use tracing_subscriber::{self, prelude::*};
 mod extract;
 mod list;
 #[derive(Debug, Parser)]
-#[command(author, version, about)]
+#[command(version, about, styles = style())]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -53,4 +56,15 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn style() -> Styles {
+    Styles::styled()
+        .header(AnsiColor::Yellow.on_default())
+        .usage(AnsiColor::Green.on_default())
+        .literal(AnsiColor::Green.on_default())
+        .placeholder(AnsiColor::Green.on_default())
+        .error(AnsiColor::Red.on_default())
+        .invalid(AnsiColor::Red.on_default())
+        .valid(AnsiColor::Blue.on_default())
 }

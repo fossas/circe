@@ -14,7 +14,7 @@ categories = ["command-line-utilities", "development-tools"]
 default-run = "circe"
 
 [dependencies]
-clap = { version = "4.5.23", features = ["derive"] }
+clap = { version = "4.5.23", features = ["color", "derive"] }
 color-eyre = "0.6.3"
 tokio = { version = "1.42.0", features = ["full"] }
 tracing = "0.1.41"

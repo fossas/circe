@@ -119,6 +119,9 @@ pub enum Mode {
     /// Only extract the base layer.
     Base,
 
+    /// Squash all "other" layers; "other" layers are all layers except the base layer.
+    SquashOther,
+
     /// Extract all layers to a separate directory for each layer.
     /// Also writes a `layers.json` file containing the list of layers in application order.
     Separate,
@@ -152,6 +155,7 @@ pub async fn main(opts: Options) -> Result<()> {
     let layers = registry.layers().await.context("list layers")?;
     match opts.layers {
         Mode::Squash => squash(&registry, &output, layers).await,
+        Mode::SquashOther => squash(&registry, &output, layers.into_iter().skip(1)).await,
         Mode::Base => squash(&registry, &output, layers.into_iter().take(1)).await,
         Mode::Separate => separate(&registry, &output, layers).await,
     }
