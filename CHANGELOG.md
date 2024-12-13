@@ -8,6 +8,7 @@ _Released: 2024-12-13_
 
 - Support `--layers squash-other`, add colors to clap
 - Ensure crates are not published to crates.io
+- Configure for `cargo release`
 
 ## [v0.3.1](https://github.com/fossas/circe/releases/tag/v0.3.1)
 
