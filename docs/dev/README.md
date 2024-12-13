@@ -2,7 +2,7 @@
 # development
 
 Tags denote releases.
-Any commit merged to `main` is expected to be release ready, 
+Any commit merged to `main` is expected to be release ready,
 with the exception of the `version` in `Cargo.toml`.
 For more detail, see the [release process](#release-process).
 
@@ -60,29 +60,17 @@ if this is not realistic at minimum every non-bugfix release **must** ensure dep
 
 ## release process
 
-While in a pre-release state, the `version` field in `Cargo.toml` displays at least the
-minimal next version with a pre-release indicator.
+> [!TIP]
+> Requires `cargo-release` and `git-cliff` to be installed.
 
-For example, if version `0.1.0` was just released, the next merge into `main` must set `version` to
-at least `0.1.1-pre`. If the next release is known to be a specific version, that's okay to use as well:
-for example if we know `0.2.0` is the next planned release, we can set it to `0.2.0-pre`.
-
-When the final commit for that version is merged, it must ensure `version` is accurate.
-Reusing the previous example, after a slew of PRs, the final one would set `version` to `0.2.0`.
-
-After this commit is merged to `main`, push a tag (recommended: using `cargo release tag`)
-matching the `version` field, with a `v` prefix.
-
-You can use `cargo release`:
+Use `cargo release`:
 ```
-cargo release tag     # Review the planned actions
-cargo release tag -x  # Execute the planned actions
+cargo release <VERSION>     # Review the planned actions
+cargo release <VERSION> -x  # Execute the planned actions
 ```
 
-If instead you wish to do this manually, this is an example of what to do:
-```
-git checkout main  # Ensure you're on main
-git pull           # Ensure you're tagging the latest commit
-git tag v0.2.0     # Validate this is correct, and don't forget the `v`
-git push --tags    # Push the new tag to the remote.
-```
+This performs several steps:
+- Updates `version` fields in crates.
+- Updates `CHANGELOG.md` with the new release (generated with `git cliff` from commit history).
+- Creates a new tag.
+- Pushes the new tag and updated `main` branch to the remote.

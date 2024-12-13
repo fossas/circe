@@ -11,6 +11,8 @@
 Circe (named after the Odyssean sorceress who transformed vessels and their contents)
 extracts and examines the contents of containers.
 
+_Looking for development docs? [Click here](./docs/dev/README.md)!_
+
 # installation
 
 > [!IMPORTANT]
