@@ -2,35 +2,65 @@ name: dynamic
 on: pull_request
 
 jobs:
+  check-test:
+    strategy:
+      matrix:
+        settings:
+        - host: windows-latest
+          target: x86_64-pc-windows-msvc
+        - host: ubuntu-latest
+          target: x86_64-unknown-linux-gnu
+        - host: ubuntu-latest
+          target: aarch64-unknown-linux-gnu
+        - host: ubuntu-latest
+          target: x86_64-unknown-linux-musl
+        - host: macos-latest
+          target: aarch64-apple-darwin
+        - host: macos-latest
+          target: x86_64-apple-darwin
+
+    runs-on: ${{ matrix.settings.host }}
+    name: test / ${{ matrix.settings.host }} / ${{ matrix.settings.target }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
+        targets: ${{ matrix.settings.target }}
+    - uses: taiki-e/install-action@nextest
+    - uses: Swatinem/rust-cache@v2.7.5
+      with:
+        key: test_${{ matrix.settings.host }}_${{ matrix.settings.target }}
+    - run: cargo nextest run --all-targets
+    - run: cargo test --doc
+
   check-build:
     strategy:
       matrix:
         settings:
         - host: windows-latest
-          setup: echo "no setup"
-          build: cargo build
+          target: x86_64-pc-windows-msvc
         - host: ubuntu-latest
-          setup: echo "no setup"
-          build: cargo build
+          target: x86_64-unknown-linux-gnu
+        - host: ubuntu-latest
+          target: aarch64-unknown-linux-gnu
+        - host: ubuntu-latest
+          target: x86_64-unknown-linux-musl
         - host: macos-latest
-          setup: |
-            rustup target add aarch64-apple-darwin
-            rustup target add x86_64-apple-darwin
-          build: |
-            cargo build --target aarch64-apple-darwin
-            cargo build --target x86_64-apple-darwin
+          target: aarch64-apple-darwin
+        - host: macos-latest
+          target: x86_64-apple-darwin
 
     runs-on: ${{ matrix.settings.host }}
-    name: test / ${{ matrix.settings.host }}
+    name: build / ${{ matrix.settings.host }} / ${{ matrix.settings.target }}
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@stable
-    - uses: taiki-e/install-action@nextest
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
+        targets: ${{ matrix.settings.target }}
     - uses: Swatinem/rust-cache@v2.7.5
       with:
-        key: ${{ matrix.settings.host }}
-    - run: ${{ matrix.settings.setup }}
-    - run: ${{ matrix.settings.build }}
-    - run: cargo check --release --all --bins --examples --tests
-    - run: cargo nextest run --all-targets
-    - run: cargo test --doc
+        key: build_${{ matrix.settings.host }}_${{ matrix.settings.target }}
+    - run: cargo check --all --bins --examples --tests
+    - run: cargo build

@@ -63,6 +63,14 @@ if this is not realistic at minimum every non-bugfix release **must** ensure dep
 > [!TIP]
 > Requires `cargo-release` and `git-cliff` to be installed.
 
+> [!NOTE]
+> In order to have your changes integrate with the changelog,
+> make sure to merge commits to `main` with a meaningful commit message.
+>
+> Additionally, if those commits are parseable as [conventional commits](https://www.conventionalcommits.org),
+> they will be grouped into sections in the changelog.
+> See the `cliff.toml` file for more details and group examples.
+
 Use `cargo release` to create a release.
 Since we cannot push to `main` directly, perform the steps below:
 
