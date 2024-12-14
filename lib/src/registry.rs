@@ -426,7 +426,7 @@ async fn safe_symlink<R: AsyncRead + Unpin>(entry: &Entry<R>, dir: &Path) -> Res
     let safe_link = dir.join(&link);
     let safe_target = dir.join(strip_root(&target));
 
-    let rel_target = compute_relative(&safe_link, &safe_target)
+    let rel_target = compute_symlink_target(&safe_link, &safe_target)
         .with_context(|| format!("compute relative path from {safe_link:?} to {safe_target:?}"))?;
     tracing::info!(
         ?link,
@@ -451,7 +451,7 @@ async fn safe_symlink<R: AsyncRead + Unpin>(entry: &Entry<R>, dir: &Path) -> Res
         })
 }
 
-fn compute_relative(src: &Path, dst: &Path) -> Result<PathBuf> {
+fn compute_symlink_target(src: &Path, dst: &Path) -> Result<PathBuf> {
     let common_prefix = src
         .components()
         .zip(dst.components())
@@ -676,22 +676,22 @@ mod tests {
 
     #[test]
     fn test_is_whiteout() {
-        assert_eq!(is_whiteout(Path::new("foo")), None);
+        assert_eq!(None, is_whiteout(Path::new("foo")));
         assert_eq!(
+            Some(PathBuf::from("foo")),
             is_whiteout(Path::new(".wh.foo")),
-            Some(PathBuf::from("foo"))
         );
     }
 
-    #[test_case(Path::new("/a/b/c"), Path::new("/a/b/d/e/f"), PathBuf::from("../d/e/f"); "one_level")]
-    #[test_case(Path::new("/usr/local/bin/ls"), Path::new("/bin/ls"), PathBuf::from("../../../../bin/ls"); "usr_local_bin_to_bin")]
-    #[test_case(Path::new("/usr/local/bin/ls"), Path::new("/usr/bin/ls"), PathBuf::from("../../../bin/ls"); "usr_local_bin_to_usr_bin")]
+    #[test_case(Path::new("/a/b/c"), Path::new("/a/b/d/e/f"), PathBuf::from("d/e/f"); "one_level")]
+    #[test_case(Path::new("/usr/local/bin/ls"), Path::new("/bin/ls"), PathBuf::from("../../../bin/ls"); "usr_local_bin_to_bin")]
+    #[test_case(Path::new("/usr/local/bin/ls"), Path::new("/usr/bin/ls"), PathBuf::from("../../bin/ls"); "usr_local_bin_to_usr_bin")]
     #[test_case(Path::new("/usr/local/bin/ls"), Path::new("/usr/local/bin/ls"), PathBuf::from("."); "same_file")]
-    #[test_case(Path::new("/usr/local/bin/eza"), Path::new("/usr/local/bin/ls"), PathBuf::from("./ls"); "same_dir")]
+    #[test_case(Path::new("/usr/local/bin/eza"), Path::new("/usr/local/bin/ls"), PathBuf::from("ls"); "same_dir")]
     #[tokio::test]
-    async fn compute_relative(src: &Path, dst: &Path, expected: PathBuf) -> Result<()> {
-        let relative = compute_relative(src, dst)?;
-        pretty_assertions::assert_eq!(relative, expected);
+    async fn compute_symlink_target(src: &Path, dst: &Path, expected: PathBuf) -> Result<()> {
+        let relative = compute_symlink_target(src, dst)?;
+        pretty_assertions::assert_eq!(expected, relative);
         Ok(())
     }
 }
