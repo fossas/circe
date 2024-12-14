@@ -16,6 +16,9 @@ fix tests
 - Support `--layers squash-other`, add colors to clap
 - Ensure crates are not published to crates.io
 - Configure for `cargo release`
+- Revert "chore(ci): split macOS test runners by architecture"
+
+This reverts commit 5f0def95e2b20c40071de1e6b151f801eb0bc984.
 
 ### 📚 Documentation
 
@@ -26,6 +29,7 @@ fix tests
 - Changelog fixup
 - *(ci)* Fix clippy checks
 - *(ci)* Split macOS test runners by architecture
+- *(ci)* Fix macOS test runners
 
 ## [v0.3.1](https://github.com/fossas/circe/releases/tag/v0.3.1)
 
