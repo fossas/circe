@@ -19,7 +19,10 @@ jobs:
     name: test / ${{ matrix.settings.host }} / ${{ matrix.settings.target }}
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@stable
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
+        targets: ${{ matrix.settings.target }}
     - uses: taiki-e/install-action@nextest
     - uses: Swatinem/rust-cache@v2.7.5
       with:
@@ -44,8 +47,9 @@ jobs:
     name: build / ${{ matrix.settings.host }} / ${{ matrix.settings.target }}
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@stable
-    - uses: taiki-e/install-action@nextest
+      with:
+        toolchain: stable
+        targets: ${{ matrix.settings.target }}
     - uses: Swatinem/rust-cache@v2.7.5
       with:
         key: build_${{ matrix.settings.host }}_${{ matrix.settings.target }}
