@@ -52,7 +52,7 @@ impl Authentication {
 /// Docker's platform string format (e.g. "linux/amd64").
 ///
 /// ```
-/// # use circe::Platform;
+/// # use circe_lib::Platform;
 /// # use std::str::FromStr;
 /// let platform = Platform::from_str("linux/amd64").expect("parse platform");
 /// assert_eq!(platform.to_string(), "linux/amd64");
@@ -221,14 +221,14 @@ impl std::fmt::Display for Platform {
 
 /// Create a [`Digest`] from a hex string at compile time.
 /// ```
-/// let digest = circe::digest!("sha256", "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
+/// let digest = circe_lib::digest!("sha256", "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
 /// assert_eq!(digest.algorithm, "sha256");
 /// assert_eq!(digest.as_hex(), "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
 /// ```
 ///
 /// If algorithm is not provided, it defaults to [`Digest::SHA256`].
 /// ```
-/// let digest = circe::digest!("a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
+/// let digest = circe_lib::digest!("a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
 /// assert_eq!(digest.algorithm, "sha256");
 /// assert_eq!(digest.as_hex(), "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
 /// ```
@@ -236,22 +236,22 @@ impl std::fmt::Display for Platform {
 /// This macro currently assumes that the hash is 32 bytes long.
 /// Providing a value of a different length will result in a compile-time error.
 /// ```compile_fail
-/// let digest = circe::digest!("a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4deadbeef");
+/// let digest = circe_lib::digest!("a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4deadbeef");
 /// ```
 ///
 /// You can work around this by providing the size of the hash as a third argument.
 /// ```
-/// let digest = circe::digest!(circe::Digest::SHA256, "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4deadbeef", 36);
+/// let digest = circe_lib::digest!(circe_lib::Digest::SHA256, "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4deadbeef", 36);
 /// assert_eq!(digest.algorithm, "sha256");
 /// assert_eq!(digest.as_hex(), "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4deadbeef");
 /// ```
 #[macro_export]
 macro_rules! digest {
     ($hex:expr) => {{
-        circe::digest!(circe::Digest::SHA256, $hex, 32)
+        circe_lib::digest!(circe_lib::Digest::SHA256, $hex, 32)
     }};
     ($algorithm:expr, $hex:expr) => {{
-        circe::digest!($algorithm, $hex, 32)
+        circe_lib::digest!($algorithm, $hex, 32)
     }};
     ($algorithm:expr, $hex:expr, $size:expr) => {{
         const HASH: [u8; $size] = hex_magic::hex!($hex);
@@ -271,7 +271,7 @@ macro_rules! digest {
 ///
 /// ```
 /// # use std::str::FromStr;
-/// let digest = circe::Digest::from_str("sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4").expect("parse digest");
+/// let digest = circe_lib::Digest::from_str("sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4").expect("parse digest");
 /// assert_eq!(digest.algorithm, "sha256");
 /// assert_eq!(digest.as_hex(), "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
 /// ```
@@ -336,7 +336,7 @@ impl From<&Digest> for Digest {
 /// This can be a named tag or a SHA256 digest.
 ///
 /// ```
-/// # use circe::{Version, Digest};
+/// # use circe_lib::{Version, Digest};
 /// # use std::str::FromStr;
 /// assert_eq!(Version::latest().to_string(), "latest");
 /// assert_eq!(Version::tag("other").to_string(), "other");
@@ -357,7 +357,7 @@ impl Version {
     /// Returns the tag for "latest".
     ///
     /// ```
-    /// # use circe::Version;
+    /// # use circe_lib::Version;
     /// assert_eq!(Version::latest().to_string(), "latest");
     /// ```
     pub fn latest() -> Self {
@@ -367,7 +367,7 @@ impl Version {
     /// Create a tagged instance.
     ///
     /// ```
-    /// # use circe::Version;
+    /// # use circe_lib::Version;
     /// assert_eq!(Version::tag("latest").to_string(), "latest");
     /// ```
     pub fn tag(tag: &str) -> Self {
@@ -377,8 +377,8 @@ impl Version {
     /// Create a digest instance.
     ///
     /// ```
-    /// # use circe::Version;
-    /// let digest = circe::digest!("sha256", "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
+    /// # use circe_lib::Version;
+    /// let digest = circe_lib::digest!("sha256", "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
     /// let version = Version::digest(digest);
     /// assert_eq!(version.to_string(), "sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
     /// ```
@@ -390,7 +390,7 @@ impl Version {
 /// A parsed container image reference.
 ///
 /// ```
-/// # use circe::{Reference, Version};
+/// # use circe_lib::{Reference, Version};
 /// # use std::str::FromStr;
 /// // Default to latest tag
 /// let reference = Reference::from_str("docker.io/library/ubuntu").expect("parse reference");
