@@ -10,6 +10,7 @@ _Released: 2024-12-14_
 - Fix(tests):
 rename `compute_relative` -> `compute_symlink_target`
 fix tests
+- *(tests)* Doctest import paths
 
 ### ✨ General
 
