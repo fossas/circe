@@ -4,10 +4,6 @@
 
 _Released: 2024-12-14_
 
-### 🐛 Bug Fixes
-
-- *(circe_lib)* Do not `info!` log symlink creation
-
 ### 📚 Documentation
 
 - *(release)* Update suggested release PR name
