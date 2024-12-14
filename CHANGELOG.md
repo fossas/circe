@@ -2,7 +2,7 @@
 
 ## [0.3.2](https://github.com/fossas/circe/releases/tag/0.3.2)
 
-_Released: 2024-12-13_
+_Released: 2024-12-14_
 
 ### 🐛 Bug Fixes
 
@@ -21,6 +21,7 @@ _Released: 2024-12-13_
 ### ⚙️ Miscellaneous Tasks
 
 - Changelog fixup
+- *(ci)* Fix clippy checks
 
 ## [v0.3.1](https://github.com/fossas/circe/releases/tag/v0.3.1)
 
