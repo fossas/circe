@@ -7,6 +7,9 @@ _Released: 2024-12-14_
 ### 🐛 Bug Fixes
 
 - *(circe)* Make viewable by `dist`
+- Fix(tests):
+rename `compute_relative` -> `compute_symlink_target`
+fix tests
 
 ### ✨ General
 
