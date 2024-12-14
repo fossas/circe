@@ -1,6 +1,18 @@
 # Changelog
 
-## [0.3.2](https://github.com/fossas/circe/releases/tag/0.3.2)
+## [0.3.3](https://github.com/fossas/circe/releases/tag/0.3.3)
+
+_Released: 2024-12-14_
+
+### 🐛 Bug Fixes
+
+- *(circe_lib)* Do not `info!` log symlink creation
+
+### 📚 Documentation
+
+- *(release)* Update suggested release PR name
+
+## [v0.3.2](https://github.com/fossas/circe/releases/tag/v0.3.2)
 
 _Released: 2024-12-14_
 
@@ -9,7 +21,7 @@ _Released: 2024-12-14_
 - Support `--layers squash-other`, add colors to clap
 - Ensure crates are not published to crates.io
 - Configure for `cargo release`
-- Prepare to release v0.3.2 ([#3](<https://github.com/fossas/circe/issues/3))
+- Prepare to release v0.3.2 ([#3](https://github.com/fossas/circe/issues/3))
 
 ## [v0.3.1](https://github.com/fossas/circe/releases/tag/v0.3.1)
 
@@ -37,7 +49,7 @@ _Released: 2024-12-12_
 - Light edit to installation instructions
 - Add flag to curl installer
 - Fix up output a bit, add troubleshooting to readme
-- Bump Swatinem/rust-cache from 2.7.2 to 2.7.5 ([#2](<https://github.com/fossas/circe/issues/2))
+- Bump Swatinem/rust-cache from 2.7.2 to 2.7.5 ([#2](https://github.com/fossas/circe/issues/2))
 
 Signed-off-by: dependabot[bot] <support@github.com>
 Co-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>
