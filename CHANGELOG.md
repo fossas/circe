@@ -4,33 +4,12 @@
 
 _Released: 2024-12-14_
 
-### 🐛 Bug Fixes
-
-- *(circe)* Make viewable by `dist`
-- Fix(tests):
-rename `compute_relative` -> `compute_symlink_target`
-fix tests
-- *(tests)* Doctest import paths
-
 ### ✨ General
 
 - Support `--layers squash-other`, add colors to clap
 - Ensure crates are not published to crates.io
 - Configure for `cargo release`
-- Revert "chore(ci): split macOS test runners by architecture"
-
-This reverts commit 5f0def95e2b20c40071de1e6b151f801eb0bc984.
-
-### 📚 Documentation
-
-- Add release process
-
-### ⚙️ Miscellaneous Tasks
-
-- Changelog fixup
-- *(ci)* Fix clippy checks
-- *(ci)* Split macOS test runners by architecture
-- *(ci)* Fix macOS test runners
+- Prepare to release v0.3.2 ([#3](<https://github.com/fossas/circe/issues/3))
 
 ## [v0.3.1](https://github.com/fossas/circe/releases/tag/v0.3.1)
 
