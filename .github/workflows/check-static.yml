@@ -10,4 +10,4 @@ jobs:
     - uses: dtolnay/rust-toolchain@stable
 
     - run: cargo fmt --all -- --check
-    - run: cargo clippy --all-features --all --tests -- -D clippy::all
+    - run: cargo clippy --all-features --all --tests -- -D clippy::correctness

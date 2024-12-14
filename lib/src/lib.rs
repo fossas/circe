@@ -173,7 +173,7 @@ impl FromStr for Platform {
                 .header("Expected:")
         };
         let examples_section = || {
-            vec!["linux/amd64/v7", "darwin/arm64"]
+            ["linux/amd64/v7", "darwin/arm64"]
                 .join("\n")
                 .header("Examples:")
         };
