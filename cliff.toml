@@ -29,8 +29,6 @@ footer = """
 """
 
 trim = true
-
-render_always = true
 output = "CHANGELOG.md"
 
 [git]

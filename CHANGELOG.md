@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.3.3](https://github.com/fossas/circe/releases/tag/0.3.3)
+## [v0.3.3](https://github.com/fossas/circe/releases/tag/v0.3.3)
 
 _Released: 2024-12-14_
 
