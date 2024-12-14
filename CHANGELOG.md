@@ -22,6 +22,7 @@ _Released: 2024-12-14_
 
 - Changelog fixup
 - *(ci)* Fix clippy checks
+- *(ci)* Split macOS test runners by architecture
 
 ## [v0.3.1](https://github.com/fossas/circe/releases/tag/v0.3.1)
 
