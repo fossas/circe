@@ -2,48 +2,52 @@ name: dynamic
 on: pull_request
 
 jobs:
-  check-build:
+  check-test:
     strategy:
       matrix:
         settings:
         - host: windows-latest
+          target: x86_64-pc-windows-gnu
         - host: ubuntu-latest
+          target: x86_64-unknown-linux-gnu
+        - host: macos-latest
+          target: aarch64-apple-darwin
+        - host: macos-latest
+          target: x86_64-apple-darwin
 
     runs-on: ${{ matrix.settings.host }}
-    name: test / ${{ matrix.settings.host }}
+    name: test / ${{ matrix.settings.host }} / ${{ matrix.settings.target }}
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
     - uses: taiki-e/install-action@nextest
     - uses: Swatinem/rust-cache@v2.7.5
       with:
-        key: ${{ matrix.settings.host }}
-    - uses: sambacha/parallelish@v1.0.0
-      id: tasks
-      with:
-        cmd1: cargo build
-        cmd2: cargo check --release --all --bins --examples --tests
-        cmd3: cargo nextest run --all-targets
-        cmd4: cargo test --doc
+        key: test_${{ matrix.settings.host }}_${{ matrix.settings.target }}
+    - run: cargo nextest run --all-targets
+    - run: cargo test --doc
 
-  check-macos:
-    runs-on: macos-latest
-    name: test / macos-latest
+  check-build:
+    strategy:
+      matrix:
+        settings:
+        - host: windows-latest
+          target: x86_64-pc-windows-gnu
+        - host: ubuntu-latest
+          target: x86_64-unknown-linux-gnu
+        - host: macos-latest
+          target: aarch64-apple-darwin
+        - host: macos-latest
+          target: x86_64-apple-darwin
+
+    runs-on: ${{ matrix.settings.host }}
+    name: build / ${{ matrix.settings.host }} / ${{ matrix.settings.target }}
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: stable
-        targets: aarch64-apple-darwin,x86_64-apple-darwin
+    - uses: dtolnay/rust-toolchain@stable
     - uses: taiki-e/install-action@nextest
     - uses: Swatinem/rust-cache@v2.7.5
       with:
-        key: macos-latest
-    - uses: sambacha/parallelish@v1.0.0
-      id: tasks
-      with:
-        cmd1: cargo build --target x86_64-apple-darwin
-        cmd2: cargo build --target aarch64-apple-darwin
-        cmd3: cargo check --release --all --bins --examples --tests
-        cmd4: cargo nextest run --all-targets
-        cmd5: cargo test --doc
+        key: build_${{ matrix.settings.host }}_${{ matrix.settings.target }}
+    - run: cargo check --all --bins --examples --tests
+    - run: cargo build
