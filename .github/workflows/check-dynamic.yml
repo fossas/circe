@@ -18,7 +18,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2.7.5
       with:
         key: ${{ matrix.settings.host }}
-    - uses: sambacha/parallelish@v1
+    - uses: sambacha/parallelish@v1.0.0
       id: tasks
       with:
         cmd1: cargo build
@@ -39,7 +39,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2.7.5
       with:
         key: macos-latest
-    - uses: sambacha/parallelish@v1
+    - uses: sambacha/parallelish@v1.0.0
       id: tasks
       with:
         cmd1: cargo build --target x86_64-apple-darwin
