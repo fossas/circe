@@ -428,7 +428,7 @@ async fn safe_symlink<R: AsyncRead + Unpin>(entry: &Entry<R>, dir: &Path) -> Res
 
     let rel_target = compute_symlink_target(&safe_link, &safe_target)
         .with_context(|| format!("compute relative path from {safe_link:?} to {safe_target:?}"))?;
-    tracing::info!(
+    debug!(
         ?link,
         ?target,
         ?safe_link,
