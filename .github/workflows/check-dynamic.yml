@@ -13,8 +13,12 @@ jobs:
           setup: echo "no setup"
           build: cargo build
         - host: macos-latest
-          setup: rustup target add aarch64-apple-darwin
-          build: cargo build --target aarch64-apple-darwin && cargo build --target x86_64-apple-darwin
+          setup: |
+            rustup target add aarch64-apple-darwin
+            rustup target add x86_64-apple-darwin
+          build: |
+            cargo build --target aarch64-apple-darwin
+            cargo build --target x86_64-apple-darwin
 
     runs-on: ${{ matrix.settings.host }}
     name: test / ${{ matrix.settings.host }}
