@@ -79,8 +79,26 @@ pub struct Options {
 #[derive(Debug, Args)]
 pub struct Target {
     /// Image reference being extracted (e.g. docker.io/library/ubuntu:latest)
-    #[arg(value_parser = Reference::from_str)]
-    pub image: Reference,
+    ///
+    /// If a fully specified reference is not provided,
+    /// the image is attempted to be resolved with the prefix
+    /// `docker.io/library`.
+    ///
+    /// The reference may optionally provide a digest, for example
+    /// `docker.io/library/ubuntu@sha256:1234567890`.
+    ///
+    /// Finally, the reference may optionally provide a tag, for example
+    /// `docker.io/library/ubuntu:latest` or `docker.io/library/ubuntu:24.04`.
+    /// If no digest or tag is provided, the tag "latest" is used.
+    ///
+    /// Put all that together and you get the following examples:
+    /// - `ubuntu` is resolved as `docker.io/library/ubuntu:latest`
+    /// - `ubuntu:24.04` is resolved as `docker.io/library/ubuntu:24.04`
+    /// - `docker.io/library/ubuntu` is resolved as `docker.io/library/ubuntu:latest`
+    /// - `docker.io/library/ubuntu@sha256:1234567890` is resolved as `docker.io/library/ubuntu@sha256:1234567890`
+    /// - `docker.io/library/ubuntu:24.04` is resolved as `docker.io/library/ubuntu:24.04`
+    #[arg(verbatim_doc_comment)]
+    pub image: String,
 
     /// Platform to extract (e.g. linux/amd64)
     ///
@@ -131,20 +149,20 @@ pub enum Mode {
 pub async fn main(opts: Options) -> Result<()> {
     info!("extracting image");
 
+    let reference = Reference::from_str(&opts.target.image)?;
+    let layer_globs = Filters::parse_glob(opts.layer_glob.into_iter().flatten())?;
+    let file_globs = Filters::parse_glob(opts.file_glob.into_iter().flatten())?;
+    let layer_regexes = Filters::parse_regex(opts.layer_regex.into_iter().flatten())?;
+    let file_regexes = Filters::parse_regex(opts.file_regex.into_iter().flatten())?;
     let auth = match (opts.target.username, opts.target.password) {
         (Some(username), Some(password)) => Authentication::basic(username, password),
         _ => Authentication::default(),
     };
 
-    let layer_globs = Filters::parse_glob(opts.layer_glob.into_iter().flatten())?;
-    let file_globs = Filters::parse_glob(opts.file_glob.into_iter().flatten())?;
-    let layer_regexes = Filters::parse_regex(opts.layer_regex.into_iter().flatten())?;
-    let file_regexes = Filters::parse_regex(opts.file_regex.into_iter().flatten())?;
-
     let output = canonicalize_output_dir(&opts.output_dir, opts.overwrite)?;
     let registry = Registry::builder()
         .maybe_platform(opts.target.platform)
-        .reference(opts.target.image)
+        .reference(reference)
         .auth(auth)
         .layer_filters(layer_globs + layer_regexes)
         .file_filters(file_globs + file_regexes)

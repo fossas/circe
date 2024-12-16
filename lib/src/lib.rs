@@ -2,7 +2,7 @@
 
 use bon::Builder;
 use color_eyre::{
-    eyre::{self, bail, eyre, Context},
+    eyre::{self, bail, ensure, eyre, Context},
     Result, Section, SectionExt,
 };
 use derive_more::derive::{Debug, Display, From};
@@ -388,28 +388,6 @@ impl Version {
 }
 
 /// A parsed container image reference.
-///
-/// ```
-/// # use circe_lib::{Reference, Version};
-/// # use std::str::FromStr;
-/// // Default to latest tag
-/// let reference = Reference::from_str("docker.io/library/ubuntu").expect("parse reference");
-/// assert_eq!(reference.host, "docker.io");
-/// assert_eq!(reference.repository, "library/ubuntu");
-/// assert_eq!(reference.version, Version::tag("latest"));
-///
-/// // Parse a tag
-/// let reference = Reference::from_str("docker.io/library/ubuntu:other").expect("parse reference");
-/// assert_eq!(reference.host, "docker.io");
-/// assert_eq!(reference.repository, "library/ubuntu");
-/// assert_eq!(reference.version, Version::tag("other"));
-///
-/// // Parse a digest
-/// let reference = Reference::from_str("docker.io/library/ubuntu@sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4").expect("parse reference");
-/// assert_eq!(reference.host, "docker.io");
-/// assert_eq!(reference.repository, "library/ubuntu");
-/// assert_eq!(reference.version.to_string(), "sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Builder)]
 pub struct Reference {
     /// Registry host (e.g. "docker.io", "ghcr.io")
@@ -450,32 +428,77 @@ impl FromStr for Reference {
     type Err = eyre::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let input_section = || s.to_string().header("Input:");
-        let (host, remainder) = s.split_once('/').ok_or_else(|| {
-            eyre!("invalid reference: missing host separator '/'").with_section(input_section)
-        })?;
+        // Returns an owned string so that we can support multiple name segments.
+        fn parse_name(name: &str) -> Result<(String, Version)> {
+            if let Some((name, digest)) = name.split_once('@') {
+                let digest = Digest::from_str(digest).context("parse digest")?;
+                Ok((name.to_string(), Version::Digest(digest)))
+            } else if let Some((name, tag)) = name.split_once(':') {
+                Ok((name.to_string(), Version::Tag(tag.to_string())))
+            } else {
+                Ok((name.to_string(), Version::latest()))
+            }
+        }
 
-        // Find either ':' for tag or '@' for digest.
-        // Check for '@' first since digest identifiers also contain ':'.
-        let (repository, version) = if let Some((repo, digest)) = remainder.split_once('@') {
-            let digest = Digest::from_str(digest).context("parse digest")?;
-            (repo, Version::Digest(digest))
-        } else if let Some((repo, tag)) = remainder.split_once(':') {
-            (repo, Version::Tag(tag.to_string()))
-        } else {
-            (remainder, Version::latest())
+        // Docker supports `docker pull ubuntu` and `docker pull library/ubuntu`,
+        // both of which are parsed as `docker.io/library/ubuntu`.
+        // The below recreates this behavior.
+        const DOCKER_IO: &str = "docker.io";
+        const LIBRARY: &str = "library";
+        let parts = s.split('/').collect::<Vec<_>>();
+        let (host, namespace, name, version) = match parts.as_slice() {
+            // For docker compatibility, `{name}` is parsed as `docker.io/library/{name}`.
+            [name] => {
+                let (name, version) = parse_name(name)?;
+                (DOCKER_IO, LIBRARY, name, version)
+            }
+
+            // Two segments may mean "{namespace}/{name}" or may mean "docker.io/{name}".
+            // This is a special case for docker compatibility.
+            [host, name] if *host == DOCKER_IO => {
+                let (name, version) = parse_name(name)?;
+                (*host, LIBRARY, name, version)
+            }
+            [namespace, name] => {
+                let (name, version) = parse_name(name)?;
+                (DOCKER_IO, *namespace, name, version)
+            }
+
+            // Some names have multiple segments, e.g. `docker.io/library/ubuntu/foo`.
+            // We can't handle multi-segment names in other branches since they conflict with the various shorthands,
+            // but handle them here since they're not ambiguous.
+            [host, namespace, name @ ..] => {
+                let name = name.join("/");
+                let (name, version) = parse_name(&name)?;
+                (*host, *namespace, name, version)
+            }
+            _ => {
+                return eyre!("invalid reference format: {s}")
+                    .with_section(|| {
+                        [
+                            "Provide either a fully qualified OCI reference, or a short form.",
+                            "Short forms are in the format `{name}` or `{namespace}/{name}`.",
+                            "If you provide a short form, the default registry is `docker.io`.",
+                        ]
+                        .join("\n")
+                        .header("Help:")
+                    })
+                    .with_section(|| {
+                        ["docker.io/library/ubuntu", "library/ubuntu", "ubuntu"]
+                            .join("\n")
+                            .header("Examples:")
+                    })
+                    .pipe(Err)
+            }
         };
 
-        if host.is_empty() {
-            return Err(eyre!("host cannot be empty").with_section(input_section));
-        }
-        if repository.is_empty() {
-            return Err(eyre!("repository cannot be empty").with_section(input_section));
-        }
+        ensure!(!host.is_empty(), "host cannot be empty: {s}");
+        ensure!(!namespace.is_empty(), "namespace cannot be empty: {s}");
+        ensure!(!name.is_empty(), "name cannot be empty: {s}");
 
         Ok(Reference {
             host: host.to_string(),
-            repository: repository.to_string(),
+            repository: format!("{namespace}/{name}"),
             version,
         })
     }

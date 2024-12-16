@@ -1,9 +1,9 @@
-use circe_lib::{registry::Registry, Authentication};
+use circe_lib::{registry::Registry, Authentication, Reference};
 use clap::Parser;
 use color_eyre::eyre::{Context, Result};
 use derive_more::Debug;
 use pluralizer::pluralize;
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 use tracing::{debug, info};
 
 use crate::extract::Target;
@@ -19,13 +19,15 @@ pub struct Options {
 pub async fn main(opts: Options) -> Result<()> {
     info!("extracting image");
 
+    let reference = Reference::from_str(&opts.target.image)?;
     let auth = match (opts.target.username, opts.target.password) {
         (Some(username), Some(password)) => Authentication::basic(username, password),
         _ => Authentication::default(),
     };
+
     let registry = Registry::builder()
         .maybe_platform(opts.target.platform)
-        .reference(opts.target.image)
+        .reference(reference)
         .auth(auth)
         .build()
         .await
