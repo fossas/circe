@@ -17,6 +17,30 @@ mod ext;
 pub mod registry;
 pub mod transform;
 
+/// Users can set this environment variable to specify the OCI base.
+/// If not set, the default is [`OCI_DEFAULT_BASE`].
+pub const OCI_BASE_VAR: &str = "OCI_DEFAULT_BASE";
+
+/// Users can set this environment variable to specify the OCI namespace.
+/// If not set, the default is [`OCI_DEFAULT_NAMESPACE`].
+pub const OCI_NAMESPACE_VAR: &str = "OCI_DEFAULT_NAMESPACE";
+
+/// The default OCI base.
+pub const OCI_DEFAULT_BASE: &str = "docker.io";
+
+/// The default OCI namespace.
+pub const OCI_DEFAULT_NAMESPACE: &str = "library";
+
+/// The OCI base.
+pub fn oci_base() -> String {
+    std::env::var(OCI_BASE_VAR).unwrap_or(OCI_DEFAULT_BASE.to_string())
+}
+
+/// The OCI namespace.
+pub fn oci_namespace() -> String {
+    std::env::var(OCI_NAMESPACE_VAR).unwrap_or(OCI_DEFAULT_NAMESPACE.to_string())
+}
+
 /// Authentication method for a registry.
 #[derive(Debug, Clone, Default, Display)]
 pub enum Authentication {
@@ -443,28 +467,28 @@ impl FromStr for Reference {
         // Docker supports `docker pull ubuntu` and `docker pull library/ubuntu`,
         // both of which are parsed as `docker.io/library/ubuntu`.
         // The below recreates this behavior.
-        const DOCKER_IO: &str = "docker.io";
-        const LIBRARY: &str = "library";
+        let base = oci_base();
+        let namespace = oci_namespace();
         let parts = s.split('/').collect::<Vec<_>>();
         let (host, namespace, name, version) = match parts.as_slice() {
-            // For docker compatibility, `{name}` is parsed as `docker.io/library/{name}`.
+            // For docker compatibility, `{name}` is parsed as `{base}/{namespace}/{name}`.
             [name] => {
                 let (name, version) = parse_name(name)?;
-                warn!("expanding '{name}' to '{DOCKER_IO}/{LIBRARY}/{name}'; fully specify the reference to avoid this behavior");
-                (DOCKER_IO, LIBRARY, name, version)
+                warn!("expanding '{name}' to '{base}/{namespace}/{name}'; fully specify the reference to avoid this behavior");
+                (base, namespace, name, version)
             }
 
-            // Two segments may mean "{namespace}/{name}" or may mean "docker.io/{name}".
+            // Two segments may mean "{namespace}/{name}" or may mean "{base}/{name}".
             // This is a special case for docker compatibility.
-            [host, name] if *host == DOCKER_IO => {
+            [host, name] if *host == base => {
                 let (name, version) = parse_name(name)?;
-                warn!("expanding '{host}/{name}' to '{host}/{LIBRARY}/{name}'; fully specify the reference to avoid this behavior");
-                (*host, LIBRARY, name, version)
+                warn!("expanding '{host}/{name}' to '{base}/{namespace}/{name}'; fully specify the reference to avoid this behavior");
+                (host.to_string(), namespace, name, version)
             }
             [namespace, name] => {
                 let (name, version) = parse_name(name)?;
-                warn!("expanding '{namespace}/{name}' to '{DOCKER_IO}/{namespace}/{name}'; fully specify the reference to avoid this behavior");
-                (DOCKER_IO, *namespace, name, version)
+                warn!("expanding '{namespace}/{name}' to '{base}/{namespace}/{name}'; fully specify the reference to avoid this behavior");
+                (base, namespace.to_string(), name, version)
             }
 
             // Some names have multiple segments, e.g. `docker.io/library/ubuntu/foo`.
@@ -473,7 +497,7 @@ impl FromStr for Reference {
             [host, namespace, name @ ..] => {
                 let name = name.join("/");
                 let (name, version) = parse_name(&name)?;
-                (*host, *namespace, name, version)
+                (host.to_string(), namespace.to_string(), name, version)
             }
             _ => {
                 return eyre!("invalid reference format: {s}")

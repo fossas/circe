@@ -38,7 +38,7 @@ powershell -c "irm https://github.com/fossas/circe/releases/latest/download/circ
 > [!TIP]
 > Check the help output for more details.
 
-## extract
+## subcommand: extract
 
 Extracts the contents of the image to disk.
 
@@ -50,7 +50,7 @@ Extracts the contents of the image to disk.
 #
 # Arguments:
 #   <image>
-#       The image to extract.
+#       The image to extract. See image reference below for more details.
 #   <target>
 #       The directory to which the image is extracted.
 #
@@ -84,7 +84,7 @@ Extracts the contents of the image to disk.
 circe extract docker.io/contribsys/faktory:latest ./faktory --layers squash --platform linux/amd64
 ```
 
-## list
+## subcommand:list
 
 Lists the contents of an image.
 
@@ -96,7 +96,7 @@ Lists the contents of an image.
 #
 # Arguments:
 #   <image>
-#       The image to list.
+#       The image to list. See image reference below for more details.
 #
 # Options for `circe list`:
 #   --platform
@@ -108,6 +108,71 @@ Lists the contents of an image.
 #       The password to use for authentication; "username" is also required if provided.
 circe list docker.io/contribsys/faktory:latest
 ```
+
+## image reference
+
+The primary recommendation for referencing an image is to use the fully qualified reference, e.g.:
+
+```shell
+docker.io/contribsys/faktory:latest
+docker.io/library/ubuntu:14.04
+some-host.dev/some-namespace/some-project/some-image:latest
+some-host.dev/some-namespace/some-project/some-image@sha256:123abc
+```
+
+However, for convenience, you can specify a "partial image reference" in a few different ways:
+
+```shell
+# namespace + name + tag; infers to docker.io/contribsys/faktory:latest
+circe list contribsys/faktory:latest
+
+# namespace + name + digest; infers to docker.io/contribsys/faktory@sha256:123abc
+circe list contribsys/faktory@sha256:123abc
+
+# namespace + name; infers to docker.io/contribsys/faktory:latest
+circe list contribsys/faktory
+
+# name + tag; infers to docker.io/library/ubuntu:latest
+circe list ubuntu:latest
+
+# name + digest; infers to docker.io/library/ubuntu@sha256:123abc
+circe list ubuntu@sha256:123abc
+
+# name; infers to docker.io/library/ubuntu:latest
+circe list ubuntu
+```
+
+By default, `circe` fills in `docker.io` for the registry and `library` for the namespace.
+However, you can customize the registry and namespace by setting the `OCI_BASE` and `OCI_NAMESPACE` environment variables:
+
+```shell
+# Specify the registry and/or namespace:
+export OCI_BASE=some-host.dev
+export OCI_NAMESPACE=some-namespace
+
+# namespace + name + tag; infers to some-host.dev/contribsys/faktory:latest
+circe list contribsys/faktory:latest
+
+# namespace + name + digest; infers to some-host.dev/contribsys/faktory@sha256:123abc
+circe list contribsys/faktory@sha256:123abc
+
+# namespace + name; infers to some-host.dev/contribsys/faktory:latest
+circe list contribsys/faktory
+
+# name + tag; infers to some-host.dev/some-namespace/ubuntu:latest
+circe list ubuntu:latest
+
+# name + digest; infers to some-host.dev/some-namespace/ubuntu@sha256:123abc
+circe list ubuntu@sha256:123abc
+
+# name; infers to some-host.dev/some-namespace/ubuntu:latest
+circe list ubuntu
+```
+
+**The overall recommendation is to use fully qualified references.**
+The intention with the ability to override `OCI_BASE` and `OCI_NAMESPACE` is to make setup easier for CI/CD pipelines
+that need to extract multiple images from a custom host and/or namespace, but don't want to have to write scripts
+to concatenate them into fully qualified references.
 
 ## platform selection
 
