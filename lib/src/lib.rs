@@ -11,7 +11,7 @@ use itertools::Itertools;
 use std::{borrow::Cow, ops::Add, str::FromStr};
 use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 use tap::{Pipe, Tap};
-use tracing::debug;
+use tracing::{debug, warn};
 
 mod ext;
 pub mod registry;
@@ -450,6 +450,7 @@ impl FromStr for Reference {
             // For docker compatibility, `{name}` is parsed as `docker.io/library/{name}`.
             [name] => {
                 let (name, version) = parse_name(name)?;
+                warn!("expanding '{name}' to '{DOCKER_IO}/{LIBRARY}/{name}'; fully specify the reference to avoid this behavior");
                 (DOCKER_IO, LIBRARY, name, version)
             }
 
@@ -457,10 +458,12 @@ impl FromStr for Reference {
             // This is a special case for docker compatibility.
             [host, name] if *host == DOCKER_IO => {
                 let (name, version) = parse_name(name)?;
+                warn!("expanding '{host}/{name}' to '{host}/{LIBRARY}/{name}'; fully specify the reference to avoid this behavior");
                 (*host, LIBRARY, name, version)
             }
             [namespace, name] => {
                 let (name, version) = parse_name(name)?;
+                warn!("expanding '{namespace}/{name}' to '{DOCKER_IO}/{namespace}/{name}'; fully specify the reference to avoid this behavior");
                 (DOCKER_IO, *namespace, name, version)
             }
 
