@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/fossas/circe/releases/tag/0.4.0)
+
+_Released: 2024-12-16_
+
+### 🚀 Features
+
+- Support docker-like references ([#6](https://github.com/fossas/circe/issues/6))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ci)* Faster builds ([#5](https://github.com/fossas/circe/issues/5))
+
 ## [v0.3.3](https://github.com/fossas/circe/releases/tag/v0.3.3)
 
 _Released: 2024-12-14_
