@@ -11,3 +11,9 @@
 **/Cargo.toml
 Cargo.lock
 Cargo.toml
+
+# In addition to the above, PRs that only update Cargo.toml and the changelog
+# are releases, and are able to be merged without review.
+**/Cargo.toml
+CHANGELOG.md
+Cargo.toml
