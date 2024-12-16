@@ -8,10 +8,6 @@ _Released: 2024-12-16_
 
 - Support docker-like references ([#6](https://github.com/fossas/circe/issues/6))
 
-### ✨ General
-
-- Fix `release.toml` in `bin`
-
 ### ⚙️ Miscellaneous Tasks
 
 - *(ci)* Faster builds ([#5](https://github.com/fossas/circe/issues/5))
