@@ -114,10 +114,10 @@ circe list docker.io/contribsys/faktory:latest
 The primary recommendation for referencing an image is to use the fully qualified reference, e.g.:
 
 ```shell
-docker.io/contribsys/faktory:latest
-docker.io/library/ubuntu:14.04
-some-host.dev/some-namespace/some-project/some-image:latest
-some-host.dev/some-namespace/some-project/some-image@sha256:123abc
+circe list docker.io/contribsys/faktory:latest
+circe list docker.io/library/ubuntu:14.04
+circe list some-host.dev/some-namespace/some-project/some-image:latest
+circe list some-host.dev/some-namespace/some-project/some-image@sha256:123abc
 ```
 
 However, for convenience, you can specify a "partial image reference" in a few different ways:
