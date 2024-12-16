@@ -40,7 +40,7 @@ async fn main() -> Result<()> {
                 .with_deferred_spans(true)
                 .with_bracketed_fields(true)
                 .with_span_retrace(true)
-                .with_targets(true),
+                .with_targets(false),
         )
         .with(
             tracing_subscriber::EnvFilter::builder()

@@ -20,7 +20,46 @@ fn display(reference: Reference, expected: &str) {
     pretty_assertions::assert_eq!(reference.to_string(), expected);
 }
 
-#[test_case("invalid:latest"; "invalid:latest")]
+#[test_case("ubuntu", "docker.io/library/ubuntu:latest"; "ubuntu")]
+#[test_case("ubuntu:14.04", "docker.io/library/ubuntu:14.04"; "ubuntu:14.04")]
+#[test_case("ubuntu@sha256:123abc", "docker.io/library/ubuntu@sha256:123abc"; "ubuntu@sha256:123abc")]
+#[test_case("library/ubuntu", "docker.io/library/ubuntu:latest"; "library/ubuntu")]
+#[test_case("contribsys/faktory", "docker.io/contribsys/faktory:latest"; "contribsys/faktory")]
+#[test_case("contribsys/faktory:1.0.0", "docker.io/contribsys/faktory:1.0.0"; "contribsys/faktory:1.0.0")]
+#[test_case("library/ubuntu:14.04", "docker.io/library/ubuntu:14.04"; "library/ubuntu:14.04")]
+#[test_case("library/ubuntu@sha256:123abc", "docker.io/library/ubuntu@sha256:123abc"; "library/ubuntu@sha256:123abc")]
+#[test_case("docker.io/library/ubuntu:14.04", "docker.io/library/ubuntu:14.04"; "docker.io/library/ubuntu:14.04")]
+#[test_case("docker.io/library/ubuntu@sha256:123abc", "docker.io/library/ubuntu@sha256:123abc"; "docker.io/library/ubuntu@sha256:123abc")]
+#[test_case("host.dev/somecorp/someproject/someimage", "host.dev/somecorp/someproject/someimage:latest"; "host.dev/somecorp/someproject/someimage")]
+#[test_case("host.dev/somecorp/someproject/someimage:1.0.0", "host.dev/somecorp/someproject/someimage:1.0.0"; "host.dev/somecorp/someproject/someimage:1.0.0")]
+#[test_case("host.dev/somecorp/someproject/someimage@sha256:123abc", "host.dev/somecorp/someproject/someimage@sha256:123abc"; "host.dev/somecorp/someproject/someimage@sha256:123abc")]
+#[test]
+fn docker_like(input: &str, expected: &str) {
+    let reference = input.parse::<Reference>().unwrap();
+    pretty_assertions::assert_eq!(reference.to_string(), expected);
+}
+
+#[test_case("ubuntu", "host.dev/somecorp/someproject/ubuntu:latest"; "ubuntu")]
+#[test_case("ubuntu:14.04", "host.dev/somecorp/someproject/ubuntu:14.04"; "ubuntu:14.04")]
+#[test_case("ubuntu@sha256:123abc", "host.dev/somecorp/someproject/ubuntu@sha256:123abc"; "ubuntu@sha256:123abc")]
+#[test_case("library/ubuntu", "host.dev/library/ubuntu:latest"; "library/ubuntu")]
+#[test_case("contribsys/faktory", "host.dev/contribsys/faktory:latest"; "contribsys/faktory")]
+#[test_case("contribsys/faktory:1.0.0", "host.dev/contribsys/faktory:1.0.0"; "contribsys/faktory:1.0.0")]
+#[test_case("library/ubuntu:14.04", "host.dev/library/ubuntu:14.04"; "library/ubuntu:14.04")]
+#[test_case("library/ubuntu@sha256:123abc", "host.dev/library/ubuntu@sha256:123abc"; "library/ubuntu@sha256:123abc")]
+#[test_case("docker.io/library/ubuntu:14.04", "docker.io/library/ubuntu:14.04"; "docker.io/library/ubuntu:14.04")]
+#[test_case("docker.io/library/ubuntu@sha256:123abc", "docker.io/library/ubuntu@sha256:123abc"; "docker.io/library/ubuntu@sha256:123abc")]
+#[test_case("host.dev/somecorp/someproject/someimage", "host.dev/somecorp/someproject/someimage:latest"; "host.dev/somecorp/someproject/someimage")]
+#[test_case("host.dev/somecorp/someproject/someimage:1.0.0", "host.dev/somecorp/someproject/someimage:1.0.0"; "host.dev/somecorp/someproject/someimage:1.0.0")]
+#[test_case("host.dev/somecorp/someproject/someimage@sha256:123abc", "host.dev/somecorp/someproject/someimage@sha256:123abc"; "host.dev/somecorp/someproject/someimage@sha256:123abc")]
+#[test]
+fn docker_like_custom_base_namespace(input: &str, expected: &str) {
+    std::env::set_var(circe_lib::OCI_BASE_VAR, "host.dev");
+    std::env::set_var(circe_lib::OCI_NAMESPACE_VAR, "somecorp/someproject");
+    let reference = input.parse::<Reference>().unwrap();
+    pretty_assertions::assert_eq!(reference.to_string(), expected);
+}
+
 #[test_case("/repo:tag"; "/repo:tag")]
 #[test_case("host/:tag"; "host/tag")]
 #[test_case("host/"; "host/")]
