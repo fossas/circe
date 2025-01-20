@@ -28,4 +28,4 @@ tracing-tree = { version = "0.4.0" }
 circe_lib = { path = "../lib" }
 serde_json = "1.0.133"
 derive_more = { version = "1.0.0", features = ["debug"] }
-pluralizer = "0.4.0"
+pluralizer = "0.5.0"
