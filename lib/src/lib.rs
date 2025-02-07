@@ -8,11 +8,12 @@ use color_eyre::{
 use derive_more::derive::{Debug, Display, From};
 use enum_assoc::Assoc;
 use itertools::Itertools;
-use std::{borrow::Cow, ops::Add, str::FromStr};
+use std::{borrow::Cow, ops::Add, path::PathBuf, str::FromStr};
 use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 use tap::{Pipe, Tap};
 use tracing::{debug, warn};
 
+mod docker;
 mod ext;
 pub mod registry;
 pub mod transform;
@@ -885,4 +886,13 @@ impl FromStr for Glob {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.to_string().pipe(Self).pipe(Ok)
     }
+}
+
+/// Get the current home directory for the current user.
+///
+/// This is a convenience function for `std::env::var("HOME")` or `std::env::var("USERPROFILE")`.
+fn homedir() -> Result<PathBuf, std::env::VarError> {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map(PathBuf::from)
 }
