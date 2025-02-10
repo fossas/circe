@@ -30,7 +30,7 @@ oci-client = { version = "0.14.0", features = ["rustls-tls"], default-features =
 os_str_bytes = "7.0.0"
 regex = "1.11.1"
 static_assertions = "1.1.0"
-strum = { version = "0.26.3", features = ["derive"] }
+strum = { version = "0.27.0", features = ["derive"] }
 tap = "1.0.1"
 tokio = "1.42.0"
 tokio-tar = "0.3.1"
