@@ -156,7 +156,7 @@ pub async fn main(opts: Options) -> Result<()> {
     let file_regexes = Filters::parse_regex(opts.file_regex.into_iter().flatten())?;
     let auth = match (opts.target.username, opts.target.password) {
         (Some(username), Some(password)) => Authentication::basic(username, password),
-        _ => Authentication::default(),
+        _ => Authentication::docker(&reference).await?,
     };
 
     let output = canonicalize_output_dir(&opts.output_dir, opts.overwrite)?;
