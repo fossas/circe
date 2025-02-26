@@ -1,0 +1,64 @@
+---
+description: Standards for placing and organizing Cursor rule files
+globs: ["**/*.mdc"]
+alwaysApply: false
+---
+
+<rule>
+# Cursor Rules Location Standards
+
+## Directory Structure
+Rules must be placed in the following structure:
+```
+PROJECT_ROOT/
+├── .cursor/
+│   └── rules/
+│       ├── your-rule-name.mdc
+│       └── ...
+└── ...
+```
+
+## File Naming Conventions
+- Use kebab-case for filenames
+- Always use .mdc extension
+- Make names descriptive of the rule's purpose
+
+## Placement Rules
+### Required Location
+- All rule files must be in `.cursor/rules/` directory
+- Files must end in `.mdc` extension
+- Path must match pattern: `./cursor/rules/*.mdc`
+
+### Prohibited Locations
+Never place rule files in:
+- Project root directory
+- Subdirectories outside `.cursor/rules`
+- Any other location
+
+## File Format
+Each rule file must contain:
+1. YAML frontmatter with metadata
+2. Rule content wrapped in `<rule>` tags
+3. Clear section headers and organization
+
+## Examples
+
+### ✅ Correct Placement
+```
+.cursor/rules/my-rule.mdc
+.cursor/rules/code-style.mdc
+```
+
+### ❌ Incorrect Placement
+```
+rules/my-rule.mdc
+my-rule.mdc
+.rules/my-rule.mdc
+```
+
+## Validation
+Files will be validated against:
+- Correct file extension (.mdc)
+- Proper location in `.cursor/rules/`
+- Valid rule content structure
+</rule>
