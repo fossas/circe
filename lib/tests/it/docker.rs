@@ -11,6 +11,11 @@ use simple_test_case::test_case;
 async fn pull_authed(image: &str) -> Result<()> {
     let reference = image.parse::<Reference>()?;
     let auth = Authentication::docker(&reference).await?;
+    if matches!(auth, Authentication::None) {
+        eprintln!("skipping test; no docker auth found");
+        return Ok(());
+    }
+
     let registry = Registry::builder()
         .auth(auth)
         .reference(reference)

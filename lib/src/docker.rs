@@ -9,7 +9,7 @@ use color_eyre::{
 use serde::Deserialize;
 use tap::TapFallible;
 use tokio::io::AsyncWriteExt;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 impl Authentication {
     /// Read authentication information for the host from the configured Docker credentials, if any.
@@ -18,6 +18,19 @@ impl Authentication {
     /// - https://docs.docker.com/reference/cli/docker/login
     /// - https://github.com/docker/docker-credential-helpers
     pub async fn docker(target: &Reference) -> Result<Self> {
+        match Self::docker_internal(target).await {
+            Ok(auth) => {
+                debug!("inferred docker auth: {auth:?}");
+                Ok(auth)
+            }
+            Err(err) => {
+                warn!(?err, "unable to infer docker auth; trying unauthenticated");
+                Ok(Authentication::None)
+            }
+        }
+    }
+
+    async fn docker_internal(target: &Reference) -> Result<Self> {
         let host = &target.host;
         let path = homedir()
             .context("get home directory")?

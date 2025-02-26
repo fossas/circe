@@ -36,11 +36,13 @@ jobs:
       with:
         key: test_${{ matrix.settings.host }}_${{ matrix.settings.target }}
     - uses: docker/login-action@v3
+      if: ${{ matrix.settings.host == 'ubuntu-latest' }}
       with:
         registry: quay.io
         username: fossa+sparkle
         password: ${{ secrets.QUAY_API_KEY }}
     - uses: docker/login-action@v3
+      if: ${{ matrix.settings.host == 'ubuntu-latest' }}
       with:
         registry: ghcr.io
         username: ${{ github.actor }}
