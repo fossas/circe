@@ -1,3 +1,4 @@
+mod docker;
 mod platform;
 mod reference;
 mod registry;
