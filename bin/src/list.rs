@@ -22,7 +22,7 @@ pub async fn main(opts: Options) -> Result<()> {
     let reference = Reference::from_str(&opts.target.image)?;
     let auth = match (opts.target.username, opts.target.password) {
         (Some(username), Some(password)) => Authentication::basic(username, password),
-        _ => Authentication::default(),
+        _ => Authentication::docker(&reference).await?,
     };
 
     let registry = Registry::builder()
