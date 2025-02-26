@@ -58,6 +58,9 @@ during code review; if you want to get ahead of the curve check it out!
 Ideally, every PR should check for updated dependencies and update them if applicable;
 if this is not realistic at minimum every non-bugfix release **must** ensure dependencies are up to date.
 
+The `.cursor/rules/conventions` file also describes more specific code conventions for Cursor and other
+compatible agents; but keep in mind _these are optional for humans_ even though they are _recommended_.
+
 ## release process
 
 > [!TIP]
