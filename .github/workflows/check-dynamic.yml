@@ -79,5 +79,6 @@ jobs:
     - uses: Swatinem/rust-cache@v2.7.5
       with:
         key: build_${{ matrix.settings.host }}_${{ matrix.settings.target }}
+
     - run: cargo check --all --bins --examples --tests
     - run: cargo build
