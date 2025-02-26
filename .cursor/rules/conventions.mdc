@@ -1,0 +1,47 @@
+---
+description: Code and documentation conventions for the project
+globs: ["**/*"]
+---
+
+<rule>
+# Code Conventions
+
+## General Principles
+- Try to match the style of the codebase
+- Think in strong types and use them to constrain the problem space
+- Avoid mutation when possible
+- Prefer modular and composable code
+- Prefer the newtype pattern for public interfaces to avoid leaking implementation details
+
+## Code Style
+- Prefer functional style code when possible
+- Prefer type inference for the left hand side of assignments
+- Put blank lines between enum variants and struct fields
+
+## Documentation
+- Don't add comments that just duplicate the code
+- DO include comments explaining _why_ we do something
+- Write comments in complete sentences with proper technical writing tone
+- Be terse in chats; if you think more context is needed prefer to add it in code comments
+- Add MPL 2.0 license headers to all source files using plain comments, not doc comments
+
+## Rust-Specific Guidelines
+
+### Project Structure
+- Prefer named module files instead of `mod.rs`
+- Add integration tests under `tests/it/`, not unit tests
+- Add proc macro invocations below comments
+
+### Error Handling
+- Always annotate new types with rust interop derives
+- Prefer `expect` over `unwrap`, but proper errors are better than both
+- Prefer `color_eyre` errors unless specific errors are requested
+
+### Code Style
+- Prefer inlining format string variables when possible
+- Do not edit `Cargo.toml` directly - use `cargo edit` commands
+- Never use left-hand-side type annotations for conversions, instead:
+  - Use `String::from("hello")` not `let s: String = "hello".into()`
+  - Use `Vec::from([1,2,3])` not `let v: Vec<i32> = [1,2,3].into()`
+  - Use `OtherType::from(value)` not `let x: OtherType = value.into()`
+</rule>
