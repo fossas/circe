@@ -1,0 +1,28 @@
+#!/bin/sh
+
+set -e
+
+if [ "$1" != "configure" ]; then
+    exit 0
+fi
+
+cat <<BANNER
+----------------------------------------------------------------------
+
+The GeoIP dynamic modules for nginx have been installed.
+To enable these modules, add the following to /etc/nginx/nginx.conf
+and reload nginx:
+
+    load_module modules/ngx_http_geoip_module.so;
+    load_module modules/ngx_stream_geoip_module.so;
+
+Please refer to the modules documentation for further details:
+https://nginx.org/en/docs/http/ngx_http_geoip_module.html
+https://nginx.org/en/docs/stream/ngx_stream_geoip_module.html
+
+----------------------------------------------------------------------
+BANNER
+
+
+
+exit 0

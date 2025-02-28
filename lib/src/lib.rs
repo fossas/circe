@@ -45,40 +45,36 @@ pub async fn create_image_source(
     layer_filters: Option<Filters>,
     file_filters: Option<Filters>,
 ) -> Result<Box<dyn ImageSource>> {
-    // Only try daemon if it's not explicitly requesting registry (non-daemon host)
-    if reference.host != "daemon" {
-        // First, check if Docker daemon is available
-        if daemon::is_daemon_available().await {
-            // Create a corresponding daemon reference
-            let daemon_reference = Reference::builder()
-                .host("daemon".to_string())
-                .repository(reference.repository.clone())
-                .version(reference.version.clone())
-                .build();
+    // Check if Docker daemon is available
+    if daemon::is_daemon_available().await {
+        // Create a corresponding daemon reference
+        let daemon_reference = Reference::builder()
+            .host("daemon".to_string())
+            .repository(reference.repository.clone())
+            .version(reference.version.clone())
+            .build();
 
-            let daemon = daemon::Daemon::builder()
-                .reference(daemon_reference.clone())
-                .maybe_platform(platform.clone())
-                .layer_filters(layer_filters.clone().unwrap_or_default())
-                .file_filters(file_filters.clone().unwrap_or_default())
-                .build()
-                .await;
+        let daemon = daemon::Daemon::builder()
+            .reference(daemon_reference.clone())
+            .maybe_platform(platform.clone())
+            .layer_filters(layer_filters.clone().unwrap_or_default())
+            .file_filters(file_filters.clone().unwrap_or_default())
+            .build()
+            .await;
 
-            // Only use daemon if it's available and the image exists
-            if let Ok(daemon) = daemon {
-                if let Ok(true) = daemon.image_exists().await {
-                    info!("Image found in Docker daemon, using local copy");
-                    return Ok(Box::new(daemon));
-                }
-                info!("Image not found in Docker daemon, falling back to registry");
+        // Only use daemon if it's available and the image exists
+        if let Ok(daemon) = daemon {
+            if let Ok(true) = daemon.image_exists().await {
+                info!("Image found in Docker daemon, using local copy");
+                return Ok(Box::new(daemon));
             }
+            info!("Image not found in Docker daemon, falling back to registry");
         }
     }
 
     // If we get here, either:
     // 1. The daemon isn't available
     // 2. The image doesn't exist in the daemon
-    // 3. A registry was explicitly requested
     // So use the registry
     let registry = registry::Registry::builder()
         .maybe_platform(platform)
@@ -539,36 +535,7 @@ impl FromStr for Reference {
             }
         }
 
-        // Special case for daemon prefix
-        if let Some(image) = s.strip_prefix("daemon:") {
-            let parts = image.split('/').collect::<Vec<_>>();
-            let (name, version) = match parts.as_slice() {
-                [name] => parse_name(name)?,
-                [namespace, name] => {
-                    let (name, version) = parse_name(name)?;
-                    let repository = format!("{namespace}/{name}");
-                    return Ok(Reference {
-                        host: "daemon".to_string(),
-                        repository,
-                        version,
-                    });
-                }
-                _ => {
-                    return eyre!("invalid daemon reference format: {image}")
-                        .with_section(|| {
-                            "Format should be daemon:image or daemon:namespace/image"
-                                .to_string()
-                                .header("Help:")
-                        })
-                        .pipe(Err);
-                }
-            };
-            return Ok(Reference {
-                host: "daemon".to_string(),
-                repository: name.clone(),
-                version,
-            });
-        }
+        // No special case for daemon prefix - we'll automatically check the daemon anyway
 
         // Docker supports `docker pull ubuntu` and `docker pull library/ubuntu`,
         // both of which are parsed as `docker.io/library/ubuntu`.
@@ -639,19 +606,10 @@ impl FromStr for Reference {
 
 impl std::fmt::Display for Reference {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Special case for daemon references
-        if self.host == "daemon" {
-            write!(f, "daemon:{}", self.repository)?;
-            match &self.version {
-                Version::Tag(tag) => write!(f, ":{}", tag),
-                Version::Digest(digest) => write!(f, "@{}", digest),
-            }
-        } else {
-            write!(f, "{}/{}", self.host, self.repository)?;
-            match &self.version {
-                Version::Tag(tag) => write!(f, ":{}", tag),
-                Version::Digest(digest) => write!(f, "@{}", digest),
-            }
+        write!(f, "{}/{}", self.host, self.repository)?;
+        match &self.version {
+            Version::Tag(tag) => write!(f, ":{}", tag),
+            Version::Digest(digest) => write!(f, "@{}", digest),
         }
     }
 }

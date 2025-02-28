@@ -120,15 +120,14 @@ circe list some-host.dev/some-namespace/some-project/some-image:latest
 circe list some-host.dev/some-namespace/some-project/some-image@sha256:123abc
 ```
 
-Circe automatically checks your local Docker daemon first before pulling from a remote registry, but you can also explicitly pull from the local Docker daemon:
+Circe automatically checks your local Docker daemon first before pulling from a remote registry:
 
 ```shell
-# Implicitly checks Docker daemon first for "alpine:latest" before pulling from registry
+# Checks Docker daemon first for "alpine:latest" before pulling from registry
 circe list alpine:latest 
 
-# Use the 'daemon:' prefix to explicitly indicate a local Docker daemon image
-circe list daemon:alpine:latest
-circe extract daemon:nginx:latest ./nginx-extracted
+# If the image exists locally, Circe will use it without making any network requests
+circe extract nginx:latest ./nginx-extracted
 ```
 
 However, for convenience, you can specify a "partial image reference" in a few different ways:

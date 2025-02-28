@@ -1,0 +1,11 @@
+/etc/default/nginx
+/etc/default/nginx-debug
+/etc/init.d/nginx
+/etc/init.d/nginx-debug
+/etc/logrotate.d/nginx
+/etc/nginx/conf.d/default.conf
+/etc/nginx/fastcgi_params
+/etc/nginx/mime.types
+/etc/nginx/nginx.conf
+/etc/nginx/scgi_params
+/etc/nginx/uwsgi_params

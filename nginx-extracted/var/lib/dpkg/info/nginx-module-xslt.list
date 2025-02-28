@@ -1,0 +1,13 @@
+/.
+/usr
+/usr/lib
+/usr/lib/nginx
+/usr/lib/nginx/modules
+/usr/lib/nginx/modules/ngx_http_xslt_filter_module-debug.so
+/usr/lib/nginx/modules/ngx_http_xslt_filter_module.so
+/usr/share
+/usr/share/doc
+/usr/share/doc/nginx-module-xslt
+/usr/share/doc/nginx-module-xslt/changelog.Debian.gz
+/usr/share/doc/nginx-module-xslt/changelog.gz
+/usr/share/doc/nginx-module-xslt/copyright

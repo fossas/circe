@@ -1,0 +1,17 @@
+/.
+/usr
+/usr/bin
+/usr/bin/njs
+/usr/lib
+/usr/lib/nginx
+/usr/lib/nginx/modules
+/usr/lib/nginx/modules/ngx_http_js_module-debug.so
+/usr/lib/nginx/modules/ngx_http_js_module.so
+/usr/lib/nginx/modules/ngx_stream_js_module-debug.so
+/usr/lib/nginx/modules/ngx_stream_js_module.so
+/usr/share
+/usr/share/doc
+/usr/share/doc/nginx-module-njs
+/usr/share/doc/nginx-module-njs/changelog.Debian.gz
+/usr/share/doc/nginx-module-njs/changelog.gz
+/usr/share/doc/nginx-module-njs/copyright
