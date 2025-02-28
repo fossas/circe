@@ -120,10 +120,13 @@ circe list some-host.dev/some-namespace/some-project/some-image:latest
 circe list some-host.dev/some-namespace/some-project/some-image@sha256:123abc
 ```
 
-You can also pull images directly from your local Docker daemon:
+Circe automatically checks your local Docker daemon first before pulling from a remote registry, but you can also explicitly pull from the local Docker daemon:
 
 ```shell
-# Use the 'daemon:' prefix to indicate a local Docker daemon image
+# Implicitly checks Docker daemon first for "alpine:latest" before pulling from registry
+circe list alpine:latest 
+
+# Use the 'daemon:' prefix to explicitly indicate a local Docker daemon image
 circe list daemon:alpine:latest
 circe extract daemon:nginx:latest ./nginx-extracted
 ```
@@ -225,7 +228,11 @@ by setting `RUST_LOG=circe=debug` or `RUST_LOG=circe_lib=debug`.
 > In macOS and Linux, you can apply environment variables to a command without changing your environment;
 > for example: `RUST_LOG=trace circe ...`.
 
-### future improvements
+### features and improvements
+
+- [x] Automatic Docker daemon check: Circe now automatically checks the local Docker daemon first before pulling from remote registries, which can significantly speed up operations when images are already available locally.
+
+#### future improvements
 
 These are somewhat "known issues", but mostly "things to keep in mind" when using `circe`.
 Ideally we'll fix these in the future; feel free to make a contribution or open an issue letting us know if one of these is blocking you.

@@ -11,7 +11,7 @@ use itertools::Itertools;
 use std::{borrow::Cow, ops::Add, path::PathBuf, str::FromStr};
 use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 use tap::{Pipe, Tap};
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 pub mod daemon;
 mod docker;
@@ -35,6 +35,61 @@ pub trait ImageSource: Send + Sync {
         layer: &LayerDescriptor,
         output: &std::path::Path,
     ) -> Result<(), color_eyre::Report>;
+}
+
+/// Creates an appropriate image source, trying Docker daemon first and then fallback to registry.
+pub async fn create_image_source(
+    reference: Reference,
+    auth: Option<Authentication>,
+    platform: Option<Platform>,
+    layer_filters: Option<Filters>,
+    file_filters: Option<Filters>,
+) -> Result<Box<dyn ImageSource>> {
+    // Only try daemon if it's not explicitly requesting registry (non-daemon host)
+    if reference.host != "daemon" {
+        // First, check if Docker daemon is available
+        if daemon::is_daemon_available().await {
+            // Create a corresponding daemon reference
+            let daemon_reference = Reference::builder()
+                .host("daemon".to_string())
+                .repository(reference.repository.clone())
+                .version(reference.version.clone())
+                .build();
+
+            let daemon = daemon::Daemon::builder()
+                .reference(daemon_reference.clone())
+                .maybe_platform(platform.clone())
+                .layer_filters(layer_filters.clone().unwrap_or_default())
+                .file_filters(file_filters.clone().unwrap_or_default())
+                .build()
+                .await;
+
+            // Only use daemon if it's available and the image exists
+            if let Ok(daemon) = daemon {
+                if let Ok(true) = daemon.image_exists().await {
+                    info!("Image found in Docker daemon, using local copy");
+                    return Ok(Box::new(daemon));
+                }
+                info!("Image not found in Docker daemon, falling back to registry");
+            }
+        }
+    }
+
+    // If we get here, either:
+    // 1. The daemon isn't available
+    // 2. The image doesn't exist in the daemon
+    // 3. A registry was explicitly requested
+    // So use the registry
+    let registry = registry::Registry::builder()
+        .maybe_platform(platform)
+        .reference(reference.clone())
+        .auth(auth.unwrap_or(Authentication::None))
+        .layer_filters(layer_filters.unwrap_or_default())
+        .file_filters(file_filters.unwrap_or_default())
+        .build()
+        .await?;
+
+    Ok(Box::new(registry))
 }
 
 /// Users can set this environment variable to specify the OCI base.

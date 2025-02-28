@@ -1,4 +1,4 @@
-use circe_lib::{daemon::Daemon, registry::Registry, Authentication, ImageSource, Reference};
+use circe_lib::{Authentication, Reference};
 use clap::Parser;
 use color_eyre::eyre::{Context, Result};
 use derive_more::Debug;
@@ -25,27 +25,11 @@ pub async fn main(opts: Options) -> Result<()> {
         _ => Authentication::docker(&reference).await?,
     };
 
-    // Use either Registry or Daemon based on the reference host
-    let source: Box<dyn ImageSource> = if reference.host == "daemon" {
-        Box::new(
-            Daemon::builder()
-                .reference(reference)
-                .maybe_platform(opts.target.platform)
-                .build()
-                .await
-                .context("configure docker daemon")?,
-        )
-    } else {
-        Box::new(
-            Registry::builder()
-                .maybe_platform(opts.target.platform)
-                .reference(reference)
-                .auth(auth)
-                .build()
-                .await
-                .context("configure remote registry")?,
-        )
-    };
+    // Use the factory function to create the appropriate image source
+    let source =
+        circe_lib::create_image_source(reference, Some(auth), opts.target.platform, None, None)
+            .await
+            .context("create image source")?;
 
     let layers = source.layers().await.context("list layers")?;
     let count = layers.len();

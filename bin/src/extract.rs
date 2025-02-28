@@ -1,7 +1,4 @@
-use circe_lib::{
-    daemon::Daemon, registry::Registry, Authentication, Filters, ImageSource, LayerDescriptor,
-    Platform, Reference,
-};
+use circe_lib::{Authentication, Filters, ImageSource, LayerDescriptor, Platform, Reference};
 use clap::{Args, Parser, ValueEnum};
 use color_eyre::eyre::{bail, Context, Result};
 use derive_more::Debug;
@@ -161,31 +158,17 @@ pub async fn main(opts: Options) -> Result<()> {
     };
 
     let output = canonicalize_output_dir(&opts.output_dir, opts.overwrite)?;
-    // Use either Registry or Daemon based on the reference host
-    let source: Box<dyn ImageSource> = if reference.host == "daemon" {
-        Box::new(
-            Daemon::builder()
-                .reference(reference)
-                .maybe_platform(opts.target.platform)
-                .layer_filters(layer_globs.clone() + layer_regexes.clone())
-                .file_filters(file_globs.clone() + file_regexes.clone())
-                .build()
-                .await
-                .context("configure docker daemon")?,
-        )
-    } else {
-        Box::new(
-            Registry::builder()
-                .maybe_platform(opts.target.platform)
-                .reference(reference)
-                .auth(auth)
-                .layer_filters(layer_globs + layer_regexes)
-                .file_filters(file_globs + file_regexes)
-                .build()
-                .await
-                .context("configure remote registry")?,
-        )
-    };
+
+    // Use the factory function to create the appropriate image source
+    let source = circe_lib::create_image_source(
+        reference,
+        Some(auth),
+        opts.target.platform,
+        Some(layer_globs + layer_regexes),
+        Some(file_globs + file_regexes),
+    )
+    .await
+    .context("create image source")?;
 
     let layers = source.layers().await.context("list layers")?;
     match opts.layers {
