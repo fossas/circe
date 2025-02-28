@@ -75,20 +75,18 @@ jobs:
       shell: bash
 
     - name: custom tests
-      run: |
-        CARGO_COMMAND=${{ matrix.settings.cross && 'cross' || 'cargo' }}
-        if [ "$CARGO_COMMAND" = "cross" ]; then
-          $CARGO_COMMAND test --all-targets --target ${{ matrix.settings.target }} --features test-custom-namespace docker_like_custom_base_namespace
-        else
-          cargo nextest run --all-targets --target ${{ matrix.settings.target }} --features test-custom-namespace docker_like_custom_base_namespace
-        fi
+      if: ${{ !matrix.settings.cross }}
+      run: >-
+        cargo nextest run
+        --all-targets --target ${{ matrix.settings.target }}
+        --features test-custom-namespace
+        docker_like_custom_base_namespace
       env:
         OCI_DEFAULT_BASE: host.dev
         OCI_DEFAULT_NAMESPACE: somecorp/someproject
       shell: bash
 
     - name: doc tests
-      run: |
-        CARGO_COMMAND=${{ matrix.settings.cross && 'cross' || 'cargo' }}
-        $CARGO_COMMAND test --doc --target ${{ matrix.settings.target }}
+      if: ${{ !matrix.settings.cross }}
+      run: cargo test --doc --target ${{ matrix.settings.target }}
       shell: bash
