@@ -44,13 +44,13 @@ jobs:
     - uses: Swatinem/rust-cache@v2.7.5
       with:
         key: test_${{ matrix.settings.host }}_${{ matrix.settings.target }}
-        
+
     - name: Install cross (if needed)
       if: matrix.settings.cross
       uses: taiki-e/install-action@v2
       with:
         tool: cross
-        
+
     - uses: docker/login-action@v3
       if: ${{ matrix.settings.host == 'ubuntu-latest' }}
       with:
@@ -64,7 +64,7 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ github.token }}
 
-    - name: Run tests
+    - name: Run standard tests
       run: |
         CARGO_COMMAND=${{ matrix.settings.cross && 'cross' || 'cargo' }}
         if [ "$CARGO_COMMAND" = "cross" ]; then
@@ -73,7 +73,20 @@ jobs:
           cargo nextest run --all-targets --target ${{ matrix.settings.target }}
         fi
       shell: bash
-      
+
+    - name: Run custom namespace tests
+      run: |
+        CARGO_COMMAND=${{ matrix.settings.cross && 'cross' || 'cargo' }}
+        if [ "$CARGO_COMMAND" = "cross" ]; then
+          $CARGO_COMMAND test --all-targets --target ${{ matrix.settings.target }} --features test-custom-namespace docker_like_custom_base_namespace
+        else
+          cargo nextest run --all-targets --target ${{ matrix.settings.target }} --features test-custom-namespace docker_like_custom_base_namespace
+        fi
+      env:
+        OCI_DEFAULT_BASE: host.dev
+        OCI_DEFAULT_NAMESPACE: somecorp/someproject
+      shell: bash
+
     - name: Run doc tests
       run: |
         CARGO_COMMAND=${{ matrix.settings.cross && 'cross' || 'cargo' }}
@@ -117,7 +130,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2.7.5
       with:
         key: build_${{ matrix.settings.host }}_${{ matrix.settings.target }}
-        
+
     - name: Install cross (if needed)
       if: matrix.settings.cross
       uses: taiki-e/install-action@v2
@@ -129,7 +142,7 @@ jobs:
         CARGO_COMMAND=${{ matrix.settings.cross && 'cross' || 'cargo' }}
         $CARGO_COMMAND check --all --bins --examples --tests --target ${{ matrix.settings.target }}
       shell: bash
-      
+
     - name: Build
       run: |
         CARGO_COMMAND=${{ matrix.settings.cross && 'cross' || 'cargo' }}
