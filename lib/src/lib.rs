@@ -75,10 +75,10 @@ pub async fn registry_source(
     Ok(registry)
 }
 
-/// An enum representing the possible image sources.
+/// A container for different image source implementations.
 /// This allows us to avoid dynamic dispatch while supporting different source types.
 #[derive(Debug)]
-pub enum ImageSourceEnum {
+pub enum MultiImageSource {
     /// Docker daemon as image source
     Daemon(daemon::Daemon),
     /// OCI registry as image source
@@ -86,7 +86,7 @@ pub enum ImageSourceEnum {
 }
 
 #[async_trait::async_trait]
-impl ImageSource for ImageSourceEnum {
+impl ImageSource for MultiImageSource {
     async fn layers(&self) -> Result<Vec<LayerDescriptor>, color_eyre::Report> {
         match self {
             Self::Daemon(d) => d.layers().await,
@@ -123,7 +123,7 @@ pub async fn image_source(
     platform: Option<Platform>,
     layer_filters: Option<Filters>,
     file_filters: Option<Filters>,
-) -> Result<ImageSourceEnum> {
+) -> Result<MultiImageSource> {
     // Check if Docker daemon is available
     if daemon::is_daemon_available().await {
         let daemon_result = daemon_source(
@@ -137,7 +137,7 @@ pub async fn image_source(
         if let Ok(daemon) = daemon_result {
             if let Ok(true) = daemon.image_exists().await {
                 info!("Image found in Docker daemon, using local copy");
-                return Ok(ImageSourceEnum::Daemon(daemon));
+                return Ok(MultiImageSource::Daemon(daemon));
             }
             info!("Image not found in Docker daemon, falling back to registry");
         }
@@ -152,7 +152,7 @@ pub async fn image_source(
         file_filters,
     ).await?;
 
-    Ok(ImageSourceEnum::Registry(registry))
+    Ok(MultiImageSource::Registry(registry))
 }
 
 /// Users can set this environment variable to specify the OCI base.

@@ -82,7 +82,7 @@ async fn auto_daemon_selection(image: &str) -> Result<()> {
     let source = circe_lib::image_source(reference, None, None, None, None).await?;
     
     // Verify that we got a Daemon source
-    assert!(matches!(source, circe_lib::ImageSourceEnum::Daemon(_)), "Should be a Daemon source");
+    assert!(matches!(source, circe_lib::MultiImageSource::Daemon(_)), "Should be a Daemon source");
     
     // Get layers and ensure we can read them - verifying the source works
     let layers = source.layers().await?;
@@ -93,7 +93,7 @@ async fn auto_daemon_selection(image: &str) -> Result<()> {
     let source = circe_lib::image_source(nonexistent_ref, None, None, None, None).await?;
     
     // Verify that we got a Registry source for the non-existent image
-    assert!(matches!(source, circe_lib::ImageSourceEnum::Registry(_)), "Should be a Registry source");
+    assert!(matches!(source, circe_lib::MultiImageSource::Registry(_)), "Should be a Registry source");
     
     Ok(())
 }

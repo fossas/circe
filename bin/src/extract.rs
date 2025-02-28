@@ -1,4 +1,4 @@
-use circe_lib::{Authentication, Filters, ImageSource, ImageSourceEnum, LayerDescriptor, Platform, Reference};
+use circe_lib::{Authentication, Filters, ImageSource, MultiImageSource, LayerDescriptor, Platform, Reference};
 use clap::{Args, Parser, ValueEnum};
 use color_eyre::eyre::{bail, Context, Result};
 use derive_more::Debug;
@@ -180,7 +180,7 @@ pub async fn main(opts: Options) -> Result<()> {
 }
 
 async fn squash(
-    source: &ImageSourceEnum,
+    source: &MultiImageSource,
     output: &PathBuf,
     layers: impl IntoIterator<Item = LayerDescriptor>,
 ) -> Result<()> {
@@ -208,7 +208,7 @@ async fn squash(
 }
 
 async fn separate(
-    source: &ImageSourceEnum,
+    source: &MultiImageSource,
     output: &PathBuf,
     layers: impl IntoIterator<Item = LayerDescriptor>,
 ) -> Result<()> {
