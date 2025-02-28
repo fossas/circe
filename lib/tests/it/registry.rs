@@ -1,6 +1,6 @@
 use async_tempfile::TempDir;
 use async_walkdir::WalkDir;
-use circe_lib::{registry::Registry, Filters, Platform, Reference};
+use circe_lib::{registry::Registry, Filters, ImageSource, Platform, Reference};
 use color_eyre::Result;
 use simple_test_case::test_case;
 

@@ -1,4 +1,4 @@
-use circe_lib::{registry::Registry, Authentication, Reference};
+use circe_lib::{Authentication, ImageSource, Reference};
 use clap::Parser;
 use color_eyre::eyre::{Context, Result};
 use derive_more::Debug;
@@ -25,25 +25,20 @@ pub async fn main(opts: Options) -> Result<()> {
         _ => Authentication::docker(&reference).await?,
     };
 
-    let registry = Registry::builder()
-        .maybe_platform(opts.target.platform)
-        .reference(reference)
-        .auth(auth)
-        .build()
-        .await
-        .context("configure remote registry")?;
+    // Get the appropriate image source
+    let source =
+        circe_lib::image_source(reference, Some(auth), opts.target.platform, None, None)
+            .await
+            .context("create image source")?;
 
-    let layers = registry.layers().await.context("list layers")?;
+    let layers = source.layers().await.context("list layers")?;
     let count = layers.len();
     info!("enumerated {}", pluralize("layer", count as isize, true));
 
     let mut listing = HashMap::new();
     for (descriptor, layer) in layers.into_iter().zip(1usize..) {
         info!(layer = %descriptor, %layer, "reading layer");
-        let files = registry
-            .list_files(&descriptor)
-            .await
-            .context("list files")?;
+        let files = source.list_files(&descriptor).await.context("list files")?;
 
         debug!(layer = %descriptor, files = %files.len(), "listed files");
         listing.insert(descriptor.digest.to_string(), files);

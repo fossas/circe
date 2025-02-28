@@ -11,12 +11,149 @@ use itertools::Itertools;
 use std::{borrow::Cow, ops::Add, path::PathBuf, str::FromStr};
 use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 use tap::{Pipe, Tap};
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
+pub mod daemon;
 mod docker;
 mod ext;
 pub mod registry;
 pub mod transform;
+
+/// Trait defining common operations for container sources.
+/// This allows using the same code for different sources like Registry and Daemon.
+#[async_trait::async_trait]
+pub trait ImageSource: Send + Sync {
+    /// List all layers in the image
+    async fn layers(&self) -> Result<Vec<LayerDescriptor>, color_eyre::Report>;
+
+    /// List files in a layer
+    async fn list_files(&self, layer: &LayerDescriptor) -> Result<Vec<String>, color_eyre::Report>;
+
+    /// Apply a layer to a location on disk
+    async fn apply_layer(
+        &self,
+        layer: &LayerDescriptor,
+        output: &std::path::Path,
+    ) -> Result<(), color_eyre::Report>;
+}
+
+/// Creates a Docker daemon image source.
+pub async fn daemon_source(
+    reference: Reference,
+    platform: Option<Platform>,
+    layer_filters: Option<Filters>,
+    file_filters: Option<Filters>,
+) -> Result<daemon::Daemon> {
+    let daemon = daemon::Daemon::builder()
+        .reference(reference) 
+        .maybe_platform(platform)
+        .layer_filters(layer_filters.unwrap_or_default())
+        .file_filters(file_filters.unwrap_or_default())
+        .build()
+        .await?;
+    
+    Ok(daemon)
+}
+
+/// Creates a registry image source.
+pub async fn registry_source(
+    reference: Reference,
+    auth: Option<Authentication>,
+    platform: Option<Platform>,
+    layer_filters: Option<Filters>,
+    file_filters: Option<Filters>,
+) -> Result<registry::Registry> {
+    let registry = registry::Registry::builder()
+        .maybe_platform(platform)
+        .reference(reference)
+        .auth(auth.unwrap_or(Authentication::None))
+        .layer_filters(layer_filters.unwrap_or_default())
+        .file_filters(file_filters.unwrap_or_default())
+        .build()
+        .await?;
+        
+    Ok(registry)
+}
+
+/// A container for different image source implementations.
+/// This allows us to avoid dynamic dispatch while supporting different source types.
+#[derive(Debug)]
+pub enum MultiImageSource {
+    /// Docker daemon as image source
+    Daemon(daemon::Daemon),
+    /// OCI registry as image source
+    Registry(registry::Registry),
+}
+
+#[async_trait::async_trait]
+impl ImageSource for MultiImageSource {
+    async fn layers(&self) -> Result<Vec<LayerDescriptor>, color_eyre::Report> {
+        match self {
+            Self::Daemon(d) => d.layers().await,
+            Self::Registry(r) => r.layers().await,
+        }
+    }
+
+    async fn list_files(&self, layer: &LayerDescriptor) -> Result<Vec<String>, color_eyre::Report> {
+        match self {
+            Self::Daemon(d) => d.list_files(layer).await,
+            Self::Registry(r) => r.list_files(layer).await,
+        }
+    }
+
+    async fn apply_layer(
+        &self,
+        layer: &LayerDescriptor,
+        output: &std::path::Path,
+    ) -> Result<(), color_eyre::Report> {
+        match self {
+            Self::Daemon(d) => d.apply_layer(layer, output).await,
+            Self::Registry(r) => r.apply_layer(layer, output).await,
+        }
+    }
+}
+
+/// Returns an appropriate image source, trying Docker daemon first and then falling back to registry.
+/// 
+/// This is a helper function that attempts to use a local Docker daemon image if available,
+/// and falls back to pulling from the registry if not.
+pub async fn image_source(
+    reference: Reference,
+    auth: Option<Authentication>,
+    platform: Option<Platform>,
+    layer_filters: Option<Filters>,
+    file_filters: Option<Filters>,
+) -> Result<MultiImageSource> {
+    // Check if Docker daemon is available
+    if daemon::is_daemon_available().await {
+        let daemon_result = daemon_source(
+            reference.clone(),
+            platform.clone(),
+            layer_filters.clone(),
+            file_filters.clone(),
+        ).await;
+
+        // Only use daemon if it's available and the image exists
+        if let Ok(daemon) = daemon_result {
+            if let Ok(true) = daemon.image_exists().await {
+                info!("Image found in Docker daemon, using local copy");
+                return Ok(MultiImageSource::Daemon(daemon));
+            }
+            info!("Image not found in Docker daemon, falling back to registry");
+        }
+    }
+
+    // Fall back to registry
+    let registry = registry_source(
+        reference,
+        auth,
+        platform,
+        layer_filters,
+        file_filters,
+    ).await?;
+
+    Ok(MultiImageSource::Registry(registry))
+}
 
 /// Users can set this environment variable to specify the OCI base.
 /// If not set, the default is [`OCI_DEFAULT_BASE`].
@@ -464,6 +601,8 @@ impl FromStr for Reference {
                 Ok((name.to_string(), Version::latest()))
             }
         }
+
+        // Parse the reference components
 
         // Docker supports `docker pull ubuntu` and `docker pull library/ubuntu`,
         // both of which are parsed as `docker.io/library/ubuntu`.

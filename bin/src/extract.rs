@@ -1,6 +1,4 @@
-use circe_lib::{
-    registry::Registry, Authentication, Filters, LayerDescriptor, Platform, Reference,
-};
+use circe_lib::{Authentication, Filters, ImageSource, MultiImageSource, LayerDescriptor, Platform, Reference};
 use clap::{Args, Parser, ValueEnum};
 use color_eyre::eyre::{bail, Context, Result};
 use derive_more::Debug;
@@ -160,27 +158,29 @@ pub async fn main(opts: Options) -> Result<()> {
     };
 
     let output = canonicalize_output_dir(&opts.output_dir, opts.overwrite)?;
-    let registry = Registry::builder()
-        .maybe_platform(opts.target.platform)
-        .reference(reference)
-        .auth(auth)
-        .layer_filters(layer_globs + layer_regexes)
-        .file_filters(file_globs + file_regexes)
-        .build()
-        .await
-        .context("configure remote registry")?;
 
-    let layers = registry.layers().await.context("list layers")?;
+    // Get the appropriate image source
+    let source = circe_lib::image_source(
+        reference,
+        Some(auth),
+        opts.target.platform,
+        Some(layer_globs + layer_regexes),
+        Some(file_globs + file_regexes),
+    )
+    .await
+    .context("create image source")?;
+
+    let layers = source.layers().await.context("list layers")?;
     match opts.layers {
-        Mode::Squash => squash(&registry, &output, layers).await,
-        Mode::SquashOther => squash(&registry, &output, layers.into_iter().skip(1)).await,
-        Mode::Base => squash(&registry, &output, layers.into_iter().take(1)).await,
-        Mode::Separate => separate(&registry, &output, layers).await,
+        Mode::Squash => squash(&source, &output, layers).await,
+        Mode::SquashOther => squash(&source, &output, layers.into_iter().skip(1)).await,
+        Mode::Base => squash(&source, &output, layers.into_iter().take(1)).await,
+        Mode::Separate => separate(&source, &output, layers).await,
     }
 }
 
 async fn squash(
-    registry: &Registry,
+    source: &MultiImageSource,
     output: &PathBuf,
     layers: impl IntoIterator<Item = LayerDescriptor>,
 ) -> Result<()> {
@@ -197,7 +197,7 @@ async fn squash(
             info!(layer = %descriptor, "applying layer {layer}");
         }
 
-        registry
+        source
             .apply_layer(&descriptor, &output)
             .await
             .with_context(|| format!("apply layer {descriptor} to {output:?}"))?;
@@ -208,7 +208,7 @@ async fn squash(
 }
 
 async fn separate(
-    registry: &Registry,
+    source: &MultiImageSource,
     output: &PathBuf,
     layers: impl IntoIterator<Item = LayerDescriptor>,
 ) -> Result<()> {
@@ -225,7 +225,7 @@ async fn separate(
             info!(layer = %descriptor, "applying layer {layer}");
         }
 
-        registry
+        source
             .apply_layer(&descriptor, &output)
             .await
             .with_context(|| format!("apply layer {descriptor} to {output:?}"))?;

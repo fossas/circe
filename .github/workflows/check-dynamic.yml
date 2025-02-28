@@ -47,6 +47,15 @@ jobs:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ github.token }}
+        
+    # Pull a small test image to ensure we have at least one image in the Docker daemon for tests
+    - name: Pull alpine test image (Linux/Mac)
+      if: ${{ matrix.settings.host == 'ubuntu-latest' || matrix.settings.host == 'macos-latest' }}
+      run: docker pull alpine:latest
+      
+    - name: Pull alpine test image (Windows)
+      if: ${{ matrix.settings.host == 'windows-latest' }}
+      run: docker pull alpine:latest
 
     - run: cargo nextest run --all-targets
     - run: cargo test --doc

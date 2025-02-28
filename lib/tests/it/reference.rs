@@ -24,6 +24,7 @@ fn display(reference: Reference, expected: &str) {
 #[test_case("ubuntu:14.04", "docker.io/library/ubuntu:14.04"; "ubuntu:14.04")]
 #[test_case("ubuntu@sha256:123abc", "docker.io/library/ubuntu@sha256:123abc"; "ubuntu@sha256:123abc")]
 #[test_case("library/ubuntu", "docker.io/library/ubuntu:latest"; "library/ubuntu")]
+// Daemon prefix tests removed - we no longer support daemon: prefix
 #[test_case("contribsys/faktory", "docker.io/contribsys/faktory:latest"; "contribsys/faktory")]
 #[test_case("contribsys/faktory:1.0.0", "docker.io/contribsys/faktory:1.0.0"; "contribsys/faktory:1.0.0")]
 #[test_case("library/ubuntu:14.04", "docker.io/library/ubuntu:14.04"; "library/ubuntu:14.04")]
