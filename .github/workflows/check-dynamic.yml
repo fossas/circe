@@ -45,7 +45,7 @@ jobs:
       with:
         key: test_${{ matrix.settings.host }}_${{ matrix.settings.target }}
 
-    - name: Install cross (if needed)
+    - name: cross
       if: matrix.settings.cross
       uses: taiki-e/install-action@v2
       with:
@@ -64,7 +64,7 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ github.token }}
 
-    - name: Run standard tests
+    - name: tests
       run: |
         CARGO_COMMAND=${{ matrix.settings.cross && 'cross' || 'cargo' }}
         if [ "$CARGO_COMMAND" = "cross" ]; then
@@ -74,7 +74,7 @@ jobs:
         fi
       shell: bash
 
-    - name: Run custom namespace tests
+    - name: custom tests
       run: |
         CARGO_COMMAND=${{ matrix.settings.cross && 'cross' || 'cargo' }}
         if [ "$CARGO_COMMAND" = "cross" ]; then
@@ -87,64 +87,8 @@ jobs:
         OCI_DEFAULT_NAMESPACE: somecorp/someproject
       shell: bash
 
-    - name: Run doc tests
+    - name: doc tests
       run: |
         CARGO_COMMAND=${{ matrix.settings.cross && 'cross' || 'cargo' }}
         $CARGO_COMMAND test --doc --target ${{ matrix.settings.target }}
-      shell: bash
-
-  check-build:
-    strategy:
-      matrix:
-        settings:
-        - host: windows-latest
-          target: x86_64-pc-windows-msvc
-          cross: false
-        - host: ubuntu-latest
-          target: x86_64-unknown-linux-gnu
-          cross: false
-        - host: ubuntu-latest
-          target: aarch64-unknown-linux-gnu
-          cross: true
-        - host: ubuntu-latest
-          target: x86_64-unknown-linux-musl
-          cross: true
-        - host: ubuntu-latest
-          target: aarch64-unknown-linux-musl
-          cross: true
-        - host: macos-latest
-          target: aarch64-apple-darwin
-          cross: false
-        - host: macos-latest
-          target: x86_64-apple-darwin
-          cross: false
-
-    runs-on: ${{ matrix.settings.host }}
-    name: build / ${{ matrix.settings.host }} / ${{ matrix.settings.target }}
-    steps:
-    - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: stable
-        targets: ${{ matrix.settings.target }}
-    - uses: Swatinem/rust-cache@v2.7.5
-      with:
-        key: build_${{ matrix.settings.host }}_${{ matrix.settings.target }}
-
-    - name: Install cross (if needed)
-      if: matrix.settings.cross
-      uses: taiki-e/install-action@v2
-      with:
-        tool: cross
-
-    - name: Check
-      run: |
-        CARGO_COMMAND=${{ matrix.settings.cross && 'cross' || 'cargo' }}
-        $CARGO_COMMAND check --all --bins --examples --tests --target ${{ matrix.settings.target }}
-      shell: bash
-
-    - name: Build
-      run: |
-        CARGO_COMMAND=${{ matrix.settings.cross && 'cross' || 'cargo' }}
-        $CARGO_COMMAND build --target ${{ matrix.settings.target }}
       shell: bash
