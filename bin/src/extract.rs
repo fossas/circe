@@ -1,5 +1,5 @@
 use circe_lib::{
-    registry::Registry, Authentication, Filters, LayerDescriptor, Platform, Reference,
+    daemon::Daemon, registry::Registry, Authentication, Filters, ImageSource, LayerDescriptor, Platform, Reference,
 };
 use clap::{Args, Parser, ValueEnum};
 use color_eyre::eyre::{bail, Context, Result};
@@ -160,27 +160,43 @@ pub async fn main(opts: Options) -> Result<()> {
     };
 
     let output = canonicalize_output_dir(&opts.output_dir, opts.overwrite)?;
-    let registry = Registry::builder()
-        .maybe_platform(opts.target.platform)
-        .reference(reference)
-        .auth(auth)
-        .layer_filters(layer_globs + layer_regexes)
-        .file_filters(file_globs + file_regexes)
-        .build()
-        .await
-        .context("configure remote registry")?;
+    // Use either Registry or Daemon based on the reference host
+    let source: Box<dyn ImageSource> = if reference.host == "daemon" {
+        Box::new(
+            Daemon::builder()
+                .reference(reference)
+                .maybe_platform(opts.target.platform)
+                .layer_filters(layer_globs.clone() + layer_regexes.clone())
+                .file_filters(file_globs.clone() + file_regexes.clone())
+                .build()
+                .await
+                .context("configure docker daemon")?,
+        )
+    } else {
+        Box::new(
+            Registry::builder()
+                .maybe_platform(opts.target.platform)
+                .reference(reference)
+                .auth(auth)
+                .layer_filters(layer_globs + layer_regexes)
+                .file_filters(file_globs + file_regexes)
+                .build()
+                .await
+                .context("configure remote registry")?,
+        )
+    };
 
-    let layers = registry.layers().await.context("list layers")?;
+    let layers = source.layers().await.context("list layers")?;
     match opts.layers {
-        Mode::Squash => squash(&registry, &output, layers).await,
-        Mode::SquashOther => squash(&registry, &output, layers.into_iter().skip(1)).await,
-        Mode::Base => squash(&registry, &output, layers.into_iter().take(1)).await,
-        Mode::Separate => separate(&registry, &output, layers).await,
+        Mode::Squash => squash(source.as_ref(), &output, layers).await,
+        Mode::SquashOther => squash(source.as_ref(), &output, layers.into_iter().skip(1)).await,
+        Mode::Base => squash(source.as_ref(), &output, layers.into_iter().take(1)).await,
+        Mode::Separate => separate(source.as_ref(), &output, layers).await,
     }
 }
 
 async fn squash(
-    registry: &Registry,
+    source: &dyn ImageSource,
     output: &PathBuf,
     layers: impl IntoIterator<Item = LayerDescriptor>,
 ) -> Result<()> {
@@ -197,7 +213,7 @@ async fn squash(
             info!(layer = %descriptor, "applying layer {layer}");
         }
 
-        registry
+        source
             .apply_layer(&descriptor, &output)
             .await
             .with_context(|| format!("apply layer {descriptor} to {output:?}"))?;
@@ -208,7 +224,7 @@ async fn squash(
 }
 
 async fn separate(
-    registry: &Registry,
+    source: &dyn ImageSource,
     output: &PathBuf,
     layers: impl IntoIterator<Item = LayerDescriptor>,
 ) -> Result<()> {
@@ -225,7 +241,7 @@ async fn separate(
             info!(layer = %descriptor, "applying layer {layer}");
         }
 
-        registry
+        source
             .apply_layer(&descriptor, &output)
             .await
             .with_context(|| format!("apply layer {descriptor} to {output:?}"))?;

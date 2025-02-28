@@ -14,19 +14,19 @@ use crate::LayerMediaTypeFlag;
 pub type Chunk = Result<Bytes, std::io::Error>;
 
 /// Identity transformer.
-pub fn identity(stream: impl Stream<Item = Chunk>) -> impl Stream<Item = Chunk> {
+pub fn identity(stream: impl Stream<Item = Chunk> + Send + 'static) -> impl Stream<Item = Chunk> + Send {
     stream
 }
 
 /// Decompress the stream using gzip.
-pub fn gzip(stream: impl Stream<Item = Chunk>) -> impl Stream<Item = Chunk> {
+pub fn gzip(stream: impl Stream<Item = Chunk> + Send + 'static) -> impl Stream<Item = Chunk> + Send {
     let reader = StreamReader::new(stream);
     let inner = GzipDecoder::new(reader);
     ReaderStream::new(inner)
 }
 
 /// Decompress the stream using zstd.
-pub fn zstd(stream: impl Stream<Item = Chunk>) -> impl Stream<Item = Chunk> {
+pub fn zstd(stream: impl Stream<Item = Chunk> + Send + 'static) -> impl Stream<Item = Chunk> + Send {
     let reader = StreamReader::new(stream);
     let inner = ZstdDecoder::new(reader);
     ReaderStream::new(inner)
@@ -34,11 +34,11 @@ pub fn zstd(stream: impl Stream<Item = Chunk>) -> impl Stream<Item = Chunk> {
 
 /// Apply a sequence of transformations to the stream based on the media type flags.
 pub fn sequence(
-    stream: impl Stream<Item = Chunk> + 'static,
+    stream: impl Stream<Item = Chunk> + Send + 'static,
     flags: &[LayerMediaTypeFlag],
-) -> Pin<Box<dyn Stream<Item = Chunk>>> {
+) -> Pin<Box<dyn Stream<Item = Chunk> + Send>> {
     // Left hand side type annotation is required to coerce to dynamic dispatching.
-    let mut stream: Pin<Box<dyn Stream<Item = Chunk>>> = Box::pin(stream);
+    let mut stream: Pin<Box<dyn Stream<Item = Chunk> + Send>> = Box::pin(stream);
 
     // Each flag in order consumes the prior stream, replacing it with a new transformed stream.
     for flag in flags {

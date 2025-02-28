@@ -1,3 +1,4 @@
+mod daemon;
 mod docker;
 mod platform;
 mod reference;

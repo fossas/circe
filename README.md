@@ -120,6 +120,14 @@ circe list some-host.dev/some-namespace/some-project/some-image:latest
 circe list some-host.dev/some-namespace/some-project/some-image@sha256:123abc
 ```
 
+You can also pull images directly from your local Docker daemon:
+
+```shell
+# Use the 'daemon:' prefix to indicate a local Docker daemon image
+circe list daemon:alpine:latest
+circe extract daemon:nginx:latest ./nginx-extracted
+```
+
 However, for convenience, you can specify a "partial image reference" in a few different ways:
 
 ```shell

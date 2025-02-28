@@ -15,8 +15,23 @@ use tracing::{debug, warn};
 
 mod docker;
 mod ext;
+pub mod daemon;
 pub mod registry;
 pub mod transform;
+
+/// Trait defining common operations for container sources.
+/// This allows using the same code for different sources like Registry and Daemon.
+#[async_trait::async_trait]
+pub trait ImageSource: Send + Sync {
+    /// List all layers in the image
+    async fn layers(&self) -> Result<Vec<LayerDescriptor>, color_eyre::Report>;
+    
+    /// List files in a layer
+    async fn list_files(&self, layer: &LayerDescriptor) -> Result<Vec<String>, color_eyre::Report>;
+    
+    /// Apply a layer to a location on disk
+    async fn apply_layer(&self, layer: &LayerDescriptor, output: &std::path::Path) -> Result<(), color_eyre::Report>;
+}
 
 /// Users can set this environment variable to specify the OCI base.
 /// If not set, the default is [`OCI_DEFAULT_BASE`].
@@ -465,6 +480,37 @@ impl FromStr for Reference {
             }
         }
 
+        // Special case for daemon prefix
+        if s.starts_with("daemon:") {
+            let image = &s[7..]; // Remove "daemon:" prefix
+            let parts = image.split('/').collect::<Vec<_>>();
+            let (name, version) = match parts.as_slice() {
+                [name] => parse_name(name)?,
+                [namespace, name] => {
+                    let (name, version) = parse_name(name)?;
+                    let repository = format!("{namespace}/{name}");
+                    return Ok(Reference {
+                        host: "daemon".to_string(),
+                        repository,
+                        version,
+                    });
+                }
+                _ => {
+                    return eyre!("invalid daemon reference format: {image}")
+                        .with_section(|| {
+                            "Format should be daemon:image or daemon:namespace/image".to_string()
+                                .header("Help:")
+                        })
+                        .pipe(Err);
+                }
+            };
+            return Ok(Reference {
+                host: "daemon".to_string(),
+                repository: name.clone(),
+                version,
+            });
+        }
+
         // Docker supports `docker pull ubuntu` and `docker pull library/ubuntu`,
         // both of which are parsed as `docker.io/library/ubuntu`.
         // The below recreates this behavior.
@@ -534,10 +580,19 @@ impl FromStr for Reference {
 
 impl std::fmt::Display for Reference {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}", self.host, self.repository)?;
-        match &self.version {
-            Version::Tag(tag) => write!(f, ":{}", tag),
-            Version::Digest(digest) => write!(f, "@{}", digest),
+        // Special case for daemon references
+        if self.host == "daemon" {
+            write!(f, "daemon:{}", self.repository)?;
+            match &self.version {
+                Version::Tag(tag) => write!(f, ":{}", tag),
+                Version::Digest(digest) => write!(f, "@{}", digest),
+            }
+        } else {
+            write!(f, "{}/{}", self.host, self.repository)?;
+            match &self.version {
+                Version::Tag(tag) => write!(f, ":{}", tag),
+                Version::Digest(digest) => write!(f, "@{}", digest),
+            }
         }
     }
 }

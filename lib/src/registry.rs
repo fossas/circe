@@ -25,7 +25,7 @@ use tracing::{debug, warn};
 use crate::{
     ext::PriorityFind,
     transform::{self, Chunk},
-    Authentication, Digest, Filter, FilterMatch, Filters, LayerDescriptor, LayerMediaType,
+    Authentication, Digest, Filter, FilterMatch, Filters, ImageSource, LayerDescriptor, LayerMediaType,
     LayerMediaTypeFlag, Platform, Reference, Version,
 };
 
@@ -112,11 +112,12 @@ impl Registry {
     }
 }
 
-impl Registry {
+#[async_trait::async_trait]
+impl ImageSource for Registry {
     /// Enumerate layers for a container reference in the remote registry.
     /// Layers are returned in order from the base image to the application.
     #[tracing::instrument]
-    pub async fn layers(&self) -> Result<Vec<LayerDescriptor>> {
+    async fn layers(&self) -> Result<Vec<LayerDescriptor>> {
         let (manifest, _) = self
             .client
             .pull_image_manifest(&self.reference, &self.auth)
@@ -130,46 +131,9 @@ impl Registry {
             .collect()
     }
 
-    /// Pull the bytes of a layer from the registry in a stream.
-    /// The `media_type` field of the [`LayerDescriptor`] can be used to determine how best to handle the content.
-    ///
-    /// Note: layer filters are not used by this function;
-    /// this is because the layer is already filtered by the [`Registry::layers`] method,
-    /// so this only matters if you create your own [`LayerDescriptor`] and pass it to this function.
-    ///
-    /// ## Layers explanation
-    ///
-    /// You can think of a layer as a "diff" (you can envision this similarly to a git diff)
-    /// from the previous layer; the first layer is a "diff" from an empty layer.
-    ///
-    /// Each diff contains zero or more changes; each change is one of the below:
-    /// - A file is added.
-    /// - A file is removed.
-    /// - A file is modified.
-    pub async fn pull_layer(
-        &self,
-        layer: &LayerDescriptor,
-    ) -> Result<impl Stream<Item = Result<Bytes>>> {
-        self.pull_layer_internal(layer)
-            .await
-            .map(|stream| stream.map(|chunk| chunk.context("read chunk")))
-    }
-
-    async fn pull_layer_internal(
-        &self,
-        layer: &LayerDescriptor,
-    ) -> Result<impl Stream<Item = Chunk>> {
-        let oci_layer = OciDescriptor::from(layer);
-        self.client
-            .pull_blob_stream(&self.reference, &oci_layer)
-            .await
-            .context("initiate stream")
-            .map(|layer| layer.stream)
-    }
-
     /// Enumerate files in a layer.
-    #[tracing::instrument]
-    pub async fn list_files(&self, layer: &LayerDescriptor) -> Result<Vec<String>> {
+    #[tracing::instrument(skip(self))]
+    async fn list_files(&self, layer: &LayerDescriptor) -> Result<Vec<String>> {
         let stream = self.pull_layer_internal(layer).await?;
 
         // Applying the layer requires interpreting the layer's media type.
@@ -256,8 +220,8 @@ impl Registry {
     // A future improvement would be to support downloading layers concurrently,
     // then still applying them serially. Since network transfer is the slowest part of this process,
     // this would speed up the overall process.
-    #[tracing::instrument]
-    pub async fn apply_layer(&self, layer: &LayerDescriptor, output: &Path) -> Result<()> {
+    #[tracing::instrument(skip(self))]
+    async fn apply_layer(&self, layer: &LayerDescriptor, output: &Path) -> Result<()> {
         let stream = self.pull_layer_internal(layer).await?;
 
         // Applying the layer requires interpreting the layer's media type.
@@ -305,10 +269,49 @@ impl Registry {
     }
 }
 
+impl Registry {
+    /// Pull the bytes of a layer from the registry in a stream.
+    /// The `media_type` field of the [`LayerDescriptor`] can be used to determine how best to handle the content.
+    ///
+    /// Note: layer filters are not used by this function;
+    /// this is because the layer is already filtered by the [`Registry::layers`] method,
+    /// so this only matters if you create your own [`LayerDescriptor`] and pass it to this function.
+    ///
+    /// ## Layers explanation
+    ///
+    /// You can think of a layer as a "diff" (you can envision this similarly to a git diff)
+    /// from the previous layer; the first layer is a "diff" from an empty layer.
+    ///
+    /// Each diff contains zero or more changes; each change is one of the below:
+    /// - A file is added.
+    /// - A file is removed.
+    /// - A file is modified.
+    pub async fn pull_layer(
+        &self,
+        layer: &LayerDescriptor,
+    ) -> Result<impl Stream<Item = Result<Bytes>>> {
+        self.pull_layer_internal(layer)
+            .await
+            .map(|stream| stream.map(|chunk| chunk.context("read chunk")))
+    }
+
+    async fn pull_layer_internal(
+        &self,
+        layer: &LayerDescriptor,
+    ) -> Result<impl Stream<Item = Chunk>> {
+        let oci_layer = OciDescriptor::from(layer);
+        self.client
+            .pull_blob_stream(&self.reference, &oci_layer)
+            .await
+            .context("initiate stream")
+            .map(|layer| layer.stream)
+    }
+}
+
 /// Apply files in the tarball to a location on disk.
 async fn apply_tarball(
     path_filters: &Filters,
-    stream: impl Stream<Item = Chunk> + Unpin,
+    stream: impl Stream<Item = Chunk> + Unpin + Send,
     output: &Path,
 ) -> Result<()> {
     let reader = StreamReader::new(stream);
@@ -383,7 +386,7 @@ async fn apply_tarball(
 }
 
 /// Enumerate files in a tarball.
-async fn enumerate_tarball(stream: impl Stream<Item = Chunk> + Unpin) -> Result<Vec<String>> {
+async fn enumerate_tarball(stream: impl Stream<Item = Chunk> + Unpin + Send) -> Result<Vec<String>> {
     let reader = StreamReader::new(stream);
     let mut archive = Archive::new(reader);
     let mut entries = archive.entries().context("read entries from tar")?;
