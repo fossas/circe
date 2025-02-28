@@ -35,7 +35,7 @@ jobs:
             cross: false
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            cross: false
+            cross: true
 
           # Cross compilation needed
           - target: x86_64-unknown-linux-musl
