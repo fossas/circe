@@ -14,19 +14,25 @@ use crate::LayerMediaTypeFlag;
 pub type Chunk = Result<Bytes, std::io::Error>;
 
 /// Identity transformer.
-pub fn identity(stream: impl Stream<Item = Chunk> + Send + 'static) -> impl Stream<Item = Chunk> + Send {
+pub fn identity(
+    stream: impl Stream<Item = Chunk> + Send + 'static,
+) -> impl Stream<Item = Chunk> + Send {
     stream
 }
 
 /// Decompress the stream using gzip.
-pub fn gzip(stream: impl Stream<Item = Chunk> + Send + 'static) -> impl Stream<Item = Chunk> + Send {
+pub fn gzip(
+    stream: impl Stream<Item = Chunk> + Send + 'static,
+) -> impl Stream<Item = Chunk> + Send {
     let reader = StreamReader::new(stream);
     let inner = GzipDecoder::new(reader);
     ReaderStream::new(inner)
 }
 
 /// Decompress the stream using zstd.
-pub fn zstd(stream: impl Stream<Item = Chunk> + Send + 'static) -> impl Stream<Item = Chunk> + Send {
+pub fn zstd(
+    stream: impl Stream<Item = Chunk> + Send + 'static,
+) -> impl Stream<Item = Chunk> + Send {
     let reader = StreamReader::new(stream);
     let inner = ZstdDecoder::new(reader);
     ReaderStream::new(inner)

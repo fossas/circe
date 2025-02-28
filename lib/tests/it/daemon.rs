@@ -1,5 +1,5 @@
 use async_tempfile::TempDir;
-use circe_lib::{daemon::Daemon, ImageSource, Reference};
+use circe_lib::{daemon::Daemon, Reference};
 use color_eyre::Result;
 use simple_test_case::test_case;
 
@@ -14,10 +14,7 @@ async fn pull_from_daemon(image: &str) -> Result<()> {
     }
 
     let reference = image.parse::<Reference>()?;
-    let daemon = Daemon::builder()
-        .reference(reference)
-        .build()
-        .await?;
+    let daemon = Daemon::builder().reference(reference).build().await?;
 
     // List and verify layers
     let layers = daemon.layers().await?;
@@ -42,16 +39,16 @@ async fn list_daemon_images() -> Result<()> {
     }
 
     let reference = "docker.io/library/alpine:latest".parse::<Reference>()?;
-    let daemon = Daemon::builder()
-        .reference(reference)
-        .build()
-        .await?;
+    let daemon = Daemon::builder().reference(reference).build().await?;
 
     let images = daemon.list_images().await?;
-    
+
     // We should have at least some images in the daemon
-    assert!(!images.is_empty(), "Docker daemon should have at least one image");
-    
+    assert!(
+        !images.is_empty(),
+        "Docker daemon should have at least one image"
+    );
+
     // Print the first few images for debugging
     for (i, image) in images.iter().take(5).enumerate() {
         println!("Image {}: {}", i + 1, image);

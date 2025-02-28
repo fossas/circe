@@ -25,8 +25,8 @@ use tracing::{debug, warn};
 use crate::{
     ext::PriorityFind,
     transform::{self, Chunk},
-    Authentication, Digest, Filter, FilterMatch, Filters, ImageSource, LayerDescriptor, LayerMediaType,
-    LayerMediaTypeFlag, Platform, Reference, Version,
+    Authentication, Digest, Filter, FilterMatch, Filters, ImageSource, LayerDescriptor,
+    LayerMediaType, LayerMediaTypeFlag, Platform, Reference, Version,
 };
 
 /// Unwrap a value, logging an error and performing the provided action if it fails.
@@ -386,7 +386,9 @@ async fn apply_tarball(
 }
 
 /// Enumerate files in a tarball.
-async fn enumerate_tarball(stream: impl Stream<Item = Chunk> + Unpin + Send) -> Result<Vec<String>> {
+async fn enumerate_tarball(
+    stream: impl Stream<Item = Chunk> + Unpin + Send,
+) -> Result<Vec<String>> {
     let reader = StreamReader::new(stream);
     let mut archive = Archive::new(reader);
     let mut entries = archive.entries().context("read entries from tar")?;

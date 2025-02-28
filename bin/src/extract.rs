@@ -1,5 +1,6 @@
 use circe_lib::{
-    daemon::Daemon, registry::Registry, Authentication, Filters, ImageSource, LayerDescriptor, Platform, Reference,
+    daemon::Daemon, registry::Registry, Authentication, Filters, ImageSource, LayerDescriptor,
+    Platform, Reference,
 };
 use clap::{Args, Parser, ValueEnum};
 use color_eyre::eyre::{bail, Context, Result};

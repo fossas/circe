@@ -13,9 +13,9 @@ use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 use tap::{Pipe, Tap};
 use tracing::{debug, warn};
 
+pub mod daemon;
 mod docker;
 mod ext;
-pub mod daemon;
 pub mod registry;
 pub mod transform;
 
@@ -25,12 +25,16 @@ pub mod transform;
 pub trait ImageSource: Send + Sync {
     /// List all layers in the image
     async fn layers(&self) -> Result<Vec<LayerDescriptor>, color_eyre::Report>;
-    
+
     /// List files in a layer
     async fn list_files(&self, layer: &LayerDescriptor) -> Result<Vec<String>, color_eyre::Report>;
-    
+
     /// Apply a layer to a location on disk
-    async fn apply_layer(&self, layer: &LayerDescriptor, output: &std::path::Path) -> Result<(), color_eyre::Report>;
+    async fn apply_layer(
+        &self,
+        layer: &LayerDescriptor,
+        output: &std::path::Path,
+    ) -> Result<(), color_eyre::Report>;
 }
 
 /// Users can set this environment variable to specify the OCI base.
@@ -481,8 +485,7 @@ impl FromStr for Reference {
         }
 
         // Special case for daemon prefix
-        if s.starts_with("daemon:") {
-            let image = &s[7..]; // Remove "daemon:" prefix
+        if let Some(image) = s.strip_prefix("daemon:") {
             let parts = image.split('/').collect::<Vec<_>>();
             let (name, version) = match parts.as_slice() {
                 [name] => parse_name(name)?,
@@ -498,7 +501,8 @@ impl FromStr for Reference {
                 _ => {
                     return eyre!("invalid daemon reference format: {image}")
                         .with_section(|| {
-                            "Format should be daemon:image or daemon:namespace/image".to_string()
+                            "Format should be daemon:image or daemon:namespace/image"
+                                .to_string()
                                 .header("Help:")
                         })
                         .pipe(Err);

@@ -54,10 +54,7 @@ pub async fn main(opts: Options) -> Result<()> {
     let mut listing = HashMap::new();
     for (descriptor, layer) in layers.into_iter().zip(1usize..) {
         info!(layer = %descriptor, %layer, "reading layer");
-        let files = source
-            .list_files(&descriptor)
-            .await
-            .context("list files")?;
+        let files = source.list_files(&descriptor).await.context("list files")?;
 
         debug!(layer = %descriptor, files = %files.len(), "listed files");
         listing.insert(descriptor.digest.to_string(), files);
