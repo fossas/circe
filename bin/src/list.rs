@@ -1,4 +1,4 @@
-use circe_lib::{Authentication, Reference};
+use circe_lib::{Authentication, ImageSource, Reference};
 use clap::Parser;
 use color_eyre::eyre::{Context, Result};
 use derive_more::Debug;

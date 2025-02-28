@@ -1,4 +1,4 @@
-use circe_lib::{Authentication, Filters, ImageSource, LayerDescriptor, Platform, Reference};
+use circe_lib::{Authentication, Filters, ImageSource, ImageSourceEnum, LayerDescriptor, Platform, Reference};
 use clap::{Args, Parser, ValueEnum};
 use color_eyre::eyre::{bail, Context, Result};
 use derive_more::Debug;
@@ -172,15 +172,15 @@ pub async fn main(opts: Options) -> Result<()> {
 
     let layers = source.layers().await.context("list layers")?;
     match opts.layers {
-        Mode::Squash => squash(source.as_ref(), &output, layers).await,
-        Mode::SquashOther => squash(source.as_ref(), &output, layers.into_iter().skip(1)).await,
-        Mode::Base => squash(source.as_ref(), &output, layers.into_iter().take(1)).await,
-        Mode::Separate => separate(source.as_ref(), &output, layers).await,
+        Mode::Squash => squash(&source, &output, layers).await,
+        Mode::SquashOther => squash(&source, &output, layers.into_iter().skip(1)).await,
+        Mode::Base => squash(&source, &output, layers.into_iter().take(1)).await,
+        Mode::Separate => separate(&source, &output, layers).await,
     }
 }
 
 async fn squash(
-    source: &dyn ImageSource,
+    source: &ImageSourceEnum,
     output: &PathBuf,
     layers: impl IntoIterator<Item = LayerDescriptor>,
 ) -> Result<()> {
@@ -208,7 +208,7 @@ async fn squash(
 }
 
 async fn separate(
-    source: &dyn ImageSource,
+    source: &ImageSourceEnum,
     output: &PathBuf,
     layers: impl IntoIterator<Item = LayerDescriptor>,
 ) -> Result<()> {
