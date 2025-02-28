@@ -227,10 +227,6 @@ by setting `RUST_LOG=circe=debug` or `RUST_LOG=circe_lib=debug`.
 > In macOS and Linux, you can apply environment variables to a command without changing your environment;
 > for example: `RUST_LOG=trace circe ...`.
 
-### features and improvements
-
-- [x] Automatic Docker daemon check: Circe now automatically checks the local Docker daemon first before pulling from remote registries, which can significantly speed up operations when images are already available locally.
-
 #### future improvements
 
 These are somewhat "known issues", but mostly "things to keep in mind" when using `circe`.

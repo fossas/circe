@@ -122,7 +122,6 @@ impl Daemon {
             .context("list images")?;
 
         for image in images {
-            // RepoTags is a Vec, not an Option
             if image.repo_tags.iter().any(|tag| tag == &image_name) {
                 return Ok(true);
             }

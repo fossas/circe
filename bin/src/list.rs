@@ -25,9 +25,9 @@ pub async fn main(opts: Options) -> Result<()> {
         _ => Authentication::docker(&reference).await?,
     };
 
-    // Use the factory function to create the appropriate image source
+    // Get the appropriate image source
     let source =
-        circe_lib::create_image_source(reference, Some(auth), opts.target.platform, None, None)
+        circe_lib::image_source(reference, Some(auth), opts.target.platform, None, None)
             .await
             .context("create image source")?;
 

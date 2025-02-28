@@ -37,8 +37,49 @@ pub trait ImageSource: Send + Sync {
     ) -> Result<(), color_eyre::Report>;
 }
 
-/// Creates an appropriate image source, trying Docker daemon first and then fallback to registry.
-pub async fn create_image_source(
+/// Creates a Docker daemon image source.
+pub async fn daemon_source(
+    reference: Reference,
+    platform: Option<Platform>,
+    layer_filters: Option<Filters>,
+    file_filters: Option<Filters>,
+) -> Result<daemon::Daemon> {
+    let daemon = daemon::Daemon::builder()
+        .reference(reference) 
+        .maybe_platform(platform)
+        .layer_filters(layer_filters.unwrap_or_default())
+        .file_filters(file_filters.unwrap_or_default())
+        .build()
+        .await?;
+    
+    Ok(daemon)
+}
+
+/// Creates a registry image source.
+pub async fn registry_source(
+    reference: Reference,
+    auth: Option<Authentication>,
+    platform: Option<Platform>,
+    layer_filters: Option<Filters>,
+    file_filters: Option<Filters>,
+) -> Result<registry::Registry> {
+    let registry = registry::Registry::builder()
+        .maybe_platform(platform)
+        .reference(reference)
+        .auth(auth.unwrap_or(Authentication::None))
+        .layer_filters(layer_filters.unwrap_or_default())
+        .file_filters(file_filters.unwrap_or_default())
+        .build()
+        .await?;
+        
+    Ok(registry)
+}
+
+/// Returns an appropriate image source, trying Docker daemon first and then falling back to registry.
+/// 
+/// This is a helper function that attempts to use a local Docker daemon image if available,
+/// and falls back to pulling from the registry if not.
+pub async fn image_source(
     reference: Reference,
     auth: Option<Authentication>,
     platform: Option<Platform>,
@@ -47,23 +88,15 @@ pub async fn create_image_source(
 ) -> Result<Box<dyn ImageSource>> {
     // Check if Docker daemon is available
     if daemon::is_daemon_available().await {
-        // Create a corresponding daemon reference
-        let daemon_reference = Reference::builder()
-            .host("daemon".to_string())
-            .repository(reference.repository.clone())
-            .version(reference.version.clone())
-            .build();
-
-        let daemon = daemon::Daemon::builder()
-            .reference(daemon_reference.clone())
-            .maybe_platform(platform.clone())
-            .layer_filters(layer_filters.clone().unwrap_or_default())
-            .file_filters(file_filters.clone().unwrap_or_default())
-            .build()
-            .await;
+        let daemon_result = daemon_source(
+            reference.clone(),
+            platform.clone(),
+            layer_filters.clone(),
+            file_filters.clone(),
+        ).await;
 
         // Only use daemon if it's available and the image exists
-        if let Ok(daemon) = daemon {
+        if let Ok(daemon) = daemon_result {
             if let Ok(true) = daemon.image_exists().await {
                 info!("Image found in Docker daemon, using local copy");
                 return Ok(Box::new(daemon));
@@ -72,18 +105,14 @@ pub async fn create_image_source(
         }
     }
 
-    // If we get here, either:
-    // 1. The daemon isn't available
-    // 2. The image doesn't exist in the daemon
-    // So use the registry
-    let registry = registry::Registry::builder()
-        .maybe_platform(platform)
-        .reference(reference.clone())
-        .auth(auth.unwrap_or(Authentication::None))
-        .layer_filters(layer_filters.unwrap_or_default())
-        .file_filters(file_filters.unwrap_or_default())
-        .build()
-        .await?;
+    // Fall back to registry
+    let registry = registry_source(
+        reference,
+        auth,
+        platform,
+        layer_filters,
+        file_filters,
+    ).await?;
 
     Ok(Box::new(registry))
 }
@@ -535,7 +564,7 @@ impl FromStr for Reference {
             }
         }
 
-        // No special case for daemon prefix - we'll automatically check the daemon anyway
+        // Parse the reference components
 
         // Docker supports `docker pull ubuntu` and `docker pull library/ubuntu`,
         // both of which are parsed as `docker.io/library/ubuntu`.

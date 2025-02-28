@@ -159,8 +159,8 @@ pub async fn main(opts: Options) -> Result<()> {
 
     let output = canonicalize_output_dir(&opts.output_dir, opts.overwrite)?;
 
-    // Use the factory function to create the appropriate image source
-    let source = circe_lib::create_image_source(
+    // Get the appropriate image source
+    let source = circe_lib::image_source(
         reference,
         Some(auth),
         opts.target.platform,
