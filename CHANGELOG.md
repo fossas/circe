@@ -1,6 +1,17 @@
 # Changelog
 
-## [0.4.0](https://github.com/fossas/circe/releases/tag/0.4.0)
+## [0.5.0](https://github.com/fossas/circe/releases/tag/0.5.0)
+
+_Released: 2025-03-01_
+
+### ✨ General
+
+- Add cursor baseline rules ([#15](https://github.com/fossas/circe/issues/15))
+- Support pulling auth from docker config ([#12](https://github.com/fossas/circe/issues/12))
+- Add CLAUDE.md for build and style guidelines ([#16](https://github.com/fossas/circe/issues/16))
+- Support ARM64 Linux MUSL target in release builds ([#18](https://github.com/fossas/circe/issues/18))
+
+## [v0.4.0](https://github.com/fossas/circe/releases/tag/v0.4.0)
 
 _Released: 2024-12-16_
 
@@ -57,11 +68,6 @@ _Released: 2024-12-12_
 - Light edit to installation instructions
 - Add flag to curl installer
 - Fix up output a bit, add troubleshooting to readme
-- Bump Swatinem/rust-cache from 2.7.2 to 2.7.5 ([#2](https://github.com/fossas/circe/issues/2))
-
-Signed-off-by: dependabot[bot] <support@github.com>
-Co-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>
-Co-authored-by: Jessica Black <me@jessica.black>
 - Support authentication
 - Support filtering
 
