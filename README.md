@@ -13,7 +13,7 @@ extracts and examines the contents of containers.
 
 _Looking for development docs? [Click here](./docs/dev/README.md)!_
 
-# Installation
+# installation
 
 Circe provides easy-to-use installation scripts for all major platforms.
 
@@ -21,7 +21,7 @@ Circe provides easy-to-use installation scripts for all major platforms.
 > If you're using **v0.4.0 or earlier**, please use the installer attached to that specific GitHub release.
 > The scripts below are only compatible with v0.5.0 and newer.
 
-## macOS or Linux
+## macos or linux
 
 Install the latest version with:
 
@@ -29,7 +29,7 @@ Install the latest version with:
 curl -sSfL https://raw.githubusercontent.com/fossas/circe/main/install.sh | bash
 ```
 
-### Options:
+### options:
 
 ```shell
 # Install to a specific directory
@@ -42,7 +42,7 @@ curl -sSfL https://raw.githubusercontent.com/fossas/circe/main/install.sh | bash
 curl -sSfL https://raw.githubusercontent.com/fossas/circe/main/install.sh | bash -s -- -h
 ```
 
-## Windows
+## windows
 
 Install the latest version with:
 
@@ -50,7 +50,7 @@ Install the latest version with:
 iwr -useb https://raw.githubusercontent.com/fossas/circe/main/install.ps1 | iex
 ```
 
-### Options:
+### options:
 
 ```powershell
 # Install to a specific directory
@@ -60,9 +60,10 @@ $BinDir="C:\tools"; iwr -useb https://raw.githubusercontent.com/fossas/circe/mai
 $Version="v0.5.0"; iwr -useb https://raw.githubusercontent.com/fossas/circe/main/install.ps1 | iex
 ```
 
-## Manual Installation
+## manual
 
-You can also download the pre-compiled binaries from the [releases page](https://github.com/fossas/circe/releases) and install them manually.
+You can also download the pre-compiled binaries from the [releases page](https://github.com/fossas/circe/releases)
+and install them manually.
 
 # usage
 
