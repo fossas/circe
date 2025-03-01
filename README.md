@@ -13,25 +13,56 @@ extracts and examines the contents of containers.
 
 _Looking for development docs? [Click here](./docs/dev/README.md)!_
 
-# installation
+# Installation
+
+Circe provides easy-to-use installation scripts for all major platforms.
 
 > [!IMPORTANT]
-> The installers below install to `~/.circe/bin`, or `%USERPROFILE%\circe\bin` on Windows.
-> They try to place the binary in your PATH, but you may need to add it manually.
-
-> [!TIP]
-> You can update circe in the future with `circe-update`, which is installed alongside `circe`.
+> If you're using **v0.4.0 or earlier**, please use the installer attached to that specific GitHub release.
+> The scripts below are only compatible with v0.5.0 and newer.
 
 ## macOS or Linux
+
+Install the latest version with:
+
 ```shell
-curl -LsSf https://github.com/fossas/circe/releases/latest/download/circe-installer.sh | bash
+curl -sSfL https://raw.githubusercontent.com/fossas/circe/main/install.sh | bash
+```
+
+### Options:
+
+```shell
+# Install to a specific directory
+curl -sSfL https://raw.githubusercontent.com/fossas/circe/main/install.sh | bash -s -- -b /usr/local/bin
+
+# Install a specific version
+curl -sSfL https://raw.githubusercontent.com/fossas/circe/main/install.sh | bash -s -- -v v0.5.0
+
+# Get help
+curl -sSfL https://raw.githubusercontent.com/fossas/circe/main/install.sh | bash -s -- -h
 ```
 
 ## Windows
 
-```shell
-powershell -c "irm https://github.com/fossas/circe/releases/latest/download/circe-installer.ps1 | iex"
+Install the latest version with:
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/fossas/circe/main/install.ps1 | iex
 ```
+
+### Options:
+
+```powershell
+# Install to a specific directory
+$BinDir="C:\tools"; iwr -useb https://raw.githubusercontent.com/fossas/circe/main/install.ps1 | iex
+
+# Install a specific version
+$Version="v0.5.0"; iwr -useb https://raw.githubusercontent.com/fossas/circe/main/install.ps1 | iex
+```
+
+## Manual Installation
+
+You can also download the pre-compiled binaries from the [releases page](https://github.com/fossas/circe/releases) and install them manually.
 
 # usage
 
