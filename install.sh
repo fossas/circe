@@ -6,7 +6,10 @@ set -euo pipefail
 # Usage:
 #   curl -sSfL https://raw.githubusercontent.com/fossas/circe/main/install.sh | bash
 #   curl -sSfL https://raw.githubusercontent.com/fossas/circe/main/install.sh | bash -s -- -b /usr/local/bin
-#   curl -sSfL https://raw.githubusercontent.com/fossas/circe/main/install.sh | bash -s -- -v v0.4.0
+#   curl -sSfL https://raw.githubusercontent.com/fossas/circe/main/install.sh | bash -s -- -v v0.5.0
+#
+# Note: For versions v0.4.0 and earlier, please use the installer attached to the specific
+# GitHub release: https://github.com/fossas/circe/releases/tag/vX.Y.Z
 #
 # Options:
 #   -v, --version    Specify a version (default: latest)
@@ -90,6 +93,30 @@ parse_args() {
     case "$1" in
       -v|--version)
         VERSION="$2"
+        # Check if it's an older version and show a warning
+        if [[ "$2" == "v0.4.0" || "$2" < "v0.4.0" ]]; then
+          warn "You're installing version $2, which may not be compatible with this installer."
+          warn "For versions v0.4.0 and earlier, please use the installer attached to the GitHub release:"
+          warn "https://github.com/fossas/circe/releases/tag/$2"
+          warn "Continuing anyway, but installation may fail."
+          
+          # Checking if we're in a pipe or tty for interactive prompts
+          if [[ -t 0 ]]; then
+            echo ""
+            echo "Do you want to continue anyway? [y/N]"
+            read -r response
+            if [[ ! "$response" =~ ^[yY]$ ]]; then
+              echo "Installation cancelled"
+              exit 1
+            fi
+          else
+            # When piped to bash, we'll continue with a warning
+            echo ""
+            warn "Running non-interactively, continuing with installation."
+            warn "Press Ctrl+C now to cancel if needed."
+            sleep 3
+          fi
+        fi
         shift 2
         ;;
       -b|--bin-dir)
@@ -110,6 +137,8 @@ parse_args() {
         echo "  -b, --bin-dir    Specify the installation directory (default: \$HOME/.local/bin)"
         echo "  -t, --tmp-dir    Specify the temporary directory (default: system temp directory)"
         echo "  -h, --help       Show this help message"
+        echo
+        echo "Note: For versions v0.4.0 and earlier, please use the installer attached to the GitHub release."
         exit 0
         ;;
       *)
