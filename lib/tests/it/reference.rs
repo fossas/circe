@@ -34,6 +34,10 @@ fn display(reference: Reference, expected: &str) {
 #[test_case("host.dev/somecorp/someproject/someimage:1.0.0", "host.dev/somecorp/someproject/someimage:1.0.0"; "host.dev/somecorp/someproject/someimage:1.0.0")]
 #[test_case("host.dev/somecorp/someproject/someimage@sha256:123abc", "host.dev/somecorp/someproject/someimage@sha256:123abc"; "host.dev/somecorp/someproject/someimage@sha256:123abc")]
 #[test]
+#[cfg_attr(
+    feature = "test-custom-namespace",
+    ignore = "ignoring standard namespace tests with 'test-custom-namespace' feature"
+)]
 fn docker_like(input: &str, expected: &str) {
     let reference = input.parse::<Reference>().unwrap();
     pretty_assertions::assert_eq!(reference.to_string(), expected);
@@ -53,9 +57,36 @@ fn docker_like(input: &str, expected: &str) {
 #[test_case("host.dev/somecorp/someproject/someimage:1.0.0", "host.dev/somecorp/someproject/someimage:1.0.0"; "host.dev/somecorp/someproject/someimage:1.0.0")]
 #[test_case("host.dev/somecorp/someproject/someimage@sha256:123abc", "host.dev/somecorp/someproject/someimage@sha256:123abc"; "host.dev/somecorp/someproject/someimage@sha256:123abc")]
 #[test]
+#[cfg_attr(
+    not(feature = "test-custom-namespace"),
+    ignore = "ignoring custom namespace tests without 'test-custom-namespace' feature"
+)]
 fn docker_like_custom_base_namespace(input: &str, expected: &str) {
-    std::env::set_var(circe_lib::OCI_BASE_VAR, "host.dev");
-    std::env::set_var(circe_lib::OCI_NAMESPACE_VAR, "somecorp/someproject");
+    // The test cases above assume these values;
+    // if something else is provided we need to give the correct error message.
+    const REQUIRED_BASE: &str = "host.dev";
+    const REQUIRED_NAMESPACE: &str = "somecorp/someproject";
+    let base = std::env::var(circe_lib::OCI_BASE_VAR)
+        .expect(format!("'{}' must be set", circe_lib::OCI_BASE_VAR).as_str());
+    let ns = std::env::var(circe_lib::OCI_NAMESPACE_VAR)
+        .expect(format!("'{}' must be set", circe_lib::OCI_NAMESPACE_VAR).as_str());
+    pretty_assertions::assert_eq!(
+        base,
+        REQUIRED_BASE,
+        "test must be run with {}={}",
+        circe_lib::OCI_BASE_VAR,
+        REQUIRED_BASE,
+    );
+    pretty_assertions::assert_eq!(
+        ns,
+        REQUIRED_NAMESPACE,
+        "test must be run with {}={}",
+        circe_lib::OCI_NAMESPACE_VAR,
+        REQUIRED_NAMESPACE,
+    );
+
+    // Now that we're sure the correct variables are set,
+    // test the parser.
     let reference = input.parse::<Reference>().unwrap();
     pretty_assertions::assert_eq!(reference.to_string(), expected);
 }

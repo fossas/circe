@@ -12,16 +12,25 @@ jobs:
         settings:
         - host: windows-latest
           target: x86_64-pc-windows-msvc
+          cross: false
         - host: ubuntu-latest
           target: x86_64-unknown-linux-gnu
+          cross: false
         - host: ubuntu-latest
           target: aarch64-unknown-linux-gnu
+          cross: true
         - host: ubuntu-latest
           target: x86_64-unknown-linux-musl
+          cross: true
+        - host: ubuntu-latest
+          target: aarch64-unknown-linux-musl
+          cross: true
         - host: macos-latest
           target: aarch64-apple-darwin
+          cross: false
         - host: macos-latest
           target: x86_64-apple-darwin
+          cross: false
 
     runs-on: ${{ matrix.settings.host }}
     name: test / ${{ matrix.settings.host }} / ${{ matrix.settings.target }}
@@ -35,6 +44,13 @@ jobs:
     - uses: Swatinem/rust-cache@v2.7.5
       with:
         key: test_${{ matrix.settings.host }}_${{ matrix.settings.target }}
+
+    - name: cross
+      if: matrix.settings.cross
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cross
+
     - uses: docker/login-action@v3
       if: ${{ matrix.settings.host == 'ubuntu-latest' }}
       with:
@@ -48,37 +64,29 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ github.token }}
 
-    - run: cargo nextest run --all-targets
-    - run: cargo test --doc
+    - name: tests
+      run: |
+        CARGO_COMMAND=${{ matrix.settings.cross && 'cross' || 'cargo' }}
+        if [ "$CARGO_COMMAND" = "cross" ]; then
+          $CARGO_COMMAND test --all-targets --target ${{ matrix.settings.target }}
+        else
+          cargo nextest run --all-targets --target ${{ matrix.settings.target }}
+        fi
+      shell: bash
 
-  check-build:
-    strategy:
-      matrix:
-        settings:
-        - host: windows-latest
-          target: x86_64-pc-windows-msvc
-        - host: ubuntu-latest
-          target: x86_64-unknown-linux-gnu
-        - host: ubuntu-latest
-          target: aarch64-unknown-linux-gnu
-        - host: ubuntu-latest
-          target: x86_64-unknown-linux-musl
-        - host: macos-latest
-          target: aarch64-apple-darwin
-        - host: macos-latest
-          target: x86_64-apple-darwin
+    - name: custom tests
+      if: ${{ !matrix.settings.cross }}
+      run: >-
+        cargo nextest run
+        --all-targets --target ${{ matrix.settings.target }}
+        --features test-custom-namespace
+        docker_like_custom_base_namespace
+      env:
+        OCI_DEFAULT_BASE: host.dev
+        OCI_DEFAULT_NAMESPACE: somecorp/someproject
+      shell: bash
 
-    runs-on: ${{ matrix.settings.host }}
-    name: build / ${{ matrix.settings.host }} / ${{ matrix.settings.target }}
-    steps:
-    - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: stable
-        targets: ${{ matrix.settings.target }}
-    - uses: Swatinem/rust-cache@v2.7.5
-      with:
-        key: build_${{ matrix.settings.host }}_${{ matrix.settings.target }}
-
-    - run: cargo check --all --bins --examples --tests
-    - run: cargo build
+    - name: doc tests
+      if: ${{ !matrix.settings.cross }}
+      run: cargo test --doc --target ${{ matrix.settings.target }}
+      shell: bash

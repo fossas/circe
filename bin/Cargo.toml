@@ -14,9 +14,6 @@ categories = ["command-line-utilities", "development-tools"]
 default-run = "circe"
 publish = false
 
-[package.metadata.dist]
-dist = true
-
 [dependencies]
 clap = { version = "4.5.23", features = ["color", "derive"] }
 color-eyre = "0.6.3"

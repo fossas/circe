@@ -15,23 +15,55 @@ _Looking for development docs? [Click here](./docs/dev/README.md)!_
 
 # installation
 
+Circe provides easy-to-use installation scripts for all major platforms.
+
 > [!IMPORTANT]
-> The installers below install to `~/.circe/bin`, or `%USERPROFILE%\circe\bin` on Windows.
-> They try to place the binary in your PATH, but you may need to add it manually.
+> If you're using **v0.4.0 or earlier**, please use the installer attached to that specific GitHub release.
+> The scripts below are only compatible with v0.5.0 and newer.
 
-> [!TIP]
-> You can update circe in the future with `circe-update`, which is installed alongside `circe`.
+## macos or linux
 
-## macOS or Linux
-```shell
-curl -LsSf https://github.com/fossas/circe/releases/latest/download/circe-installer.sh | bash
-```
-
-## Windows
+Install the latest version with:
 
 ```shell
-powershell -c "irm https://github.com/fossas/circe/releases/latest/download/circe-installer.ps1 | iex"
+curl -sSfL https://raw.githubusercontent.com/fossas/circe/main/install.sh | bash
 ```
+
+### options:
+
+```shell
+# Install to a specific directory
+curl -sSfL https://raw.githubusercontent.com/fossas/circe/main/install.sh | bash -s -- -b /usr/local/bin
+
+# Install a specific version
+curl -sSfL https://raw.githubusercontent.com/fossas/circe/main/install.sh | bash -s -- -v v0.5.0
+
+# Get help
+curl -sSfL https://raw.githubusercontent.com/fossas/circe/main/install.sh | bash -s -- -h
+```
+
+## windows
+
+Install the latest version with:
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/fossas/circe/main/install.ps1 | iex
+```
+
+### options:
+
+```powershell
+# Install to a specific directory
+$BinDir="C:\tools"; iwr -useb https://raw.githubusercontent.com/fossas/circe/main/install.ps1 | iex
+
+# Install a specific version
+$Version="v0.5.0"; iwr -useb https://raw.githubusercontent.com/fossas/circe/main/install.ps1 | iex
+```
+
+## manual
+
+You can also download the pre-compiled binaries from the [releases page](https://github.com/fossas/circe/releases)
+and install them manually.
 
 # usage
 
