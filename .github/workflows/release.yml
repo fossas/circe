@@ -154,9 +154,9 @@ jobs:
       - name: changelog
         id: changelog
         run: |
-          VERSION=$(echo "${{ steps.get_version.outputs.VERSION }}" | sed 's/^v//')
-          # Generate changelog for this specific version
-          git cliff --current --strip header > version_changelog.txt
+          LATEST_TAG=$(git describe --tags --abbrev=0)
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 --exclude=$LATEST_TAG)
+          gh api repos/fossas/circe/compare/$PREVIOUS_TAG...$LATEST_TAG --jq '.commits[] | select(.author.login != "dependabot[bot]") | .commit.message | select(. | contains("chore") | not) | "- " + .' > version_changelog.txt
           echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
           cat version_changelog.txt >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
