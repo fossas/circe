@@ -76,7 +76,7 @@ To create a new release, simply create and push a tag:
 # Create and push the tag from main branch
 git checkout main
 git pull && git pull --tags --force
-git tag v0.5.0 # replace this with the version you want to release
+git tag -a v0.5.0 -m "v0.5.0" # replace this with the version you want to release
 git push --tags
 ```
 
