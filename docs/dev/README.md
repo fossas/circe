@@ -67,6 +67,8 @@ compatible agents; but keep in mind _these are optional for humans_ even though 
 > Make sure to merge commits to `main` with meaningful commit messages.
 > Using [conventional commits](https://www.conventionalcommits.org) format
 > is recommended for better organization of changes in the GitHub release notes.
+>
+> PRs where the title contains the literal `chore` are ignored in the release notes.
 
 To create a new release, simply create and push a tag:
 
