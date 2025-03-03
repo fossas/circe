@@ -1,4 +1,0 @@
-sign-tag = true
-sign-commit = true
-pre-release-commit-message = "chore: Release {{version}}"
-tag-message	= "chore: Release {{version}}"
