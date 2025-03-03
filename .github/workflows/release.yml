@@ -130,8 +130,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Fetch all history for git-cliff to work properly
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -140,15 +138,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2.7.5
       - uses: taiki-e/install-action@v2
         with:
-          tool: git-cliff
+          tool: cargo-set-version
 
       - name: version
         id: get_version
         run: |
           if [[ "${{ github.event_name }}" == "push" && "${{ startsWith(github.ref, 'refs/tags/v') }}" == "true" ]]; then
-            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+            # Remove the 'v' prefix for Cargo.toml versions
+            VERSION=${GITHUB_REF#refs/tags/v}
+            echo "VERSION=v$VERSION" >> $GITHUB_OUTPUT
+            cargo set-version $VERSION
           else
+            # For non-tag builds, use 0.0.0-{git-sha} format
+            GIT_SHA=$(git rev-parse --short HEAD)
             echo "VERSION=pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+            cargo set-version "0.0.0-${GIT_SHA}"
           fi
 
       - name: changelog

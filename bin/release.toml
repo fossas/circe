@@ -1,3 +1,2 @@
 tag-prefix = ""
 shared-version = true
-pre-release-hook = ["git", "cliff", "--workdir", "..", "-o", "../CHANGELOG.md", "--tag", "{{version}}" ]

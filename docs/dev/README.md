@@ -63,46 +63,25 @@ compatible agents; but keep in mind _these are optional for humans_ even though 
 
 ## release process
 
-> [!TIP]
-> Requires `cargo-release` and `git-cliff` to be installed.
-
 > [!NOTE]
-> In order to have your changes integrate with the changelog,
-> make sure to merge commits to `main` with a meaningful commit message.
->
-> Additionally, if those commits are parseable as [conventional commits](https://www.conventionalcommits.org),
-> they will be grouped into sections in the changelog.
-> See the `cliff.toml` file for more details and group examples.
+> Make sure to merge commits to `main` with meaningful commit messages.
+> Using [conventional commits](https://www.conventionalcommits.org) format
+> is recommended for better organization of changes in the GitHub release notes.
 
-Use `cargo release` to create a release.
-Since we cannot push to `main` directly, perform the steps below:
+To create a new release, simply create and push a tag:
 
 ```shell
-# Choose a version. It should be valid semver.
-# Also, choose a branch name. A good default is `prep/$VERSION`.
-VERSION=<VERSION>
-BRANCH="prep/$VERSION"
-
-# Make a branch for release prep and check it out.
-git checkout -b $BRANCH
-
-# Have cargo-release create the release.
-# This does several things:
-# - Validates that the git index is clean
-# - Updates version numbers in the crates
-# - Generates the changelog using `git-cliff`
-# - Creates a commit with the changes
-# - Pushes the branch to the remote
-cargo release --no-publish --no-tag --allow-branch=$BRANCH $VERSION
-
-# Open a PR; once tests pass and reviewers approve, merge to main and come back here for the final step.
-# The PR title should be "chore(release): $VERSION" or something that similarly avoids generating a changelog entry;
-# see the `cliff.toml` file for more details.
-gh pr create --base main --body-file .github/release_template.md --title "chore(release): $VERSION"
-
-# Finally, run `cargo release` on the main branch.
-# This doesn't create new commits; it just tags the commit and pushes the tag.
+# Create and push the tag from main branch
 git checkout main
-git pull
-cargo release -x
+git pull && git pull --tags --force
+git tag v0.5.0 # replace this with the version you want to release
+git push --tags
 ```
+
+Once you push the tag, the GitHub Actions workflow will:
+1. Set the crate versions based on the tag
+2. Build the release binaries for all supported platforms
+3. Generate release notes from commit messages
+4. Create a GitHub release with the binaries and notes
+
+This approach ensures the version in Cargo.toml always matches the release tag, and eliminates the need for separate version update PRs.
