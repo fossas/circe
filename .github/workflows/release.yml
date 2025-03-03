@@ -59,6 +59,22 @@ jobs:
         if: matrix.cross
         with:
           tool: cross
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-set-version
+
+      - name: set version
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && "${{ startsWith(github.ref, 'refs/tags/v') }}" == "true" ]]; then
+            # Remove the 'v' prefix for Cargo.toml versions
+            VERSION=${GITHUB_REF#refs/tags/v}
+            cargo set-version $VERSION
+          else
+            # For non-tag builds, use 0.0.0-{git-sha} format
+            GIT_SHA=$(git rev-parse --short HEAD)
+            cargo set-version "0.0.0-${GIT_SHA}"
+          fi
 
       - name: build
         shell: bash
@@ -140,19 +156,13 @@ jobs:
         with:
           tool: cargo-set-version
 
-      - name: version
+      - name: get version
         id: get_version
         run: |
           if [[ "${{ github.event_name }}" == "push" && "${{ startsWith(github.ref, 'refs/tags/v') }}" == "true" ]]; then
-            # Remove the 'v' prefix for Cargo.toml versions
-            VERSION=${GITHUB_REF#refs/tags/v}
-            echo "VERSION=v$VERSION" >> $GITHUB_OUTPUT
-            cargo set-version $VERSION
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           else
-            # For non-tag builds, use 0.0.0-{git-sha} format
-            GIT_SHA=$(git rev-parse --short HEAD)
             echo "VERSION=pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
-            cargo set-version "0.0.0-${GIT_SHA}"
           fi
 
       - name: changelog
