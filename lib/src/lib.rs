@@ -8,6 +8,7 @@ use color_eyre::{
 use derive_more::derive::{Debug, Display, From};
 use enum_assoc::Assoc;
 use itertools::Itertools;
+use serde::{Serialize, Serializer};
 use std::{borrow::Cow, ops::Add, path::PathBuf, str::FromStr};
 use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 use tap::{Pipe, Tap};
@@ -15,6 +16,7 @@ use tracing::{debug, warn};
 
 mod docker;
 mod ext;
+pub mod extract;
 pub mod registry;
 pub mod transform;
 
@@ -82,7 +84,7 @@ impl Authentication {
 /// let platform = Platform::from_str("linux/amd64").expect("parse platform");
 /// assert_eq!(platform.to_string(), "linux/amd64");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Builder)]
+#[derive(Debug, Clone, PartialEq, Eq, Builder, Serialize)]
 pub struct Platform {
     /// Operating system the container runs on (e.g. "linux", "windows", "darwin").
     ///
@@ -356,6 +358,12 @@ impl From<&Digest> for Digest {
     }
 }
 
+impl Serialize for Digest {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.to_string().serialize(serializer)
+    }
+}
+
 /// Version identifier for a container image.
 ///
 /// This can be a named tag or a SHA256 digest.
@@ -369,7 +377,8 @@ impl From<&Digest> for Digest {
 /// let digest = Digest::from_str("sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4").expect("parse digest");
 /// assert_eq!(Version::digest(digest).to_string(), "sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Display)]
+#[derive(Debug, Clone, PartialEq, Eq, Display, Serialize)]
+#[serde(rename_all = "snake_case", tag = "kind", content = "value")]
 pub enum Version {
     /// A named tag (e.g. "latest", "1.0.0")
     Tag(String),
@@ -413,7 +422,7 @@ impl Version {
 }
 
 /// A parsed container image reference.
-#[derive(Debug, Clone, PartialEq, Eq, Builder)]
+#[derive(Debug, Clone, PartialEq, Eq, Builder, Serialize)]
 pub struct Reference {
     /// Registry host (e.g. "docker.io", "ghcr.io")
     #[builder(into)]
@@ -426,6 +435,16 @@ pub struct Reference {
     /// Version identifier, either a tag or SHA digest
     #[builder(into, default = Version::latest())]
     pub version: Version,
+}
+
+impl Reference {
+    /// The name of the container without the repository.
+    pub fn name(&self) -> &str {
+        self.repository
+            .split('/')
+            .last()
+            .unwrap_or(&self.repository)
+    }
 }
 
 impl<S: reference_builder::State> ReferenceBuilder<S> {

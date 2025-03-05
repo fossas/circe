@@ -53,6 +53,9 @@ pub struct Registry {
     /// The OCI reference, used by the underlying client.
     reference: OciReference,
 
+    /// The original reference used to construct the registry.
+    pub original: Reference,
+
     /// Authentication information for the registry.
     auth: RegistryAuth,
 
@@ -92,6 +95,7 @@ impl Registry {
         reference: Reference,
     ) -> Result<Self> {
         let client = client(platform.clone());
+        let original = reference.clone();
         let reference = OciReference::from(&reference);
         let auth = auth
             .map(RegistryAuth::from)
@@ -106,6 +110,7 @@ impl Registry {
             auth,
             client,
             reference,
+            original,
             layer_filters: layer_filters.unwrap_or_default(),
             file_filters: file_filters.unwrap_or_default(),
         })
@@ -128,6 +133,17 @@ impl Registry {
             .filter(|layer| self.layer_filters.matches(layer))
             .map(LayerDescriptor::try_from)
             .collect()
+    }
+
+    /// Report the digest for the image.
+    #[tracing::instrument]
+    pub async fn digest(&self) -> Result<Digest> {
+        let (_, digest) = self
+            .client
+            .pull_image_manifest(&self.reference, &self.auth)
+            .await
+            .context("pull image manifest")?;
+        Digest::from_str(&digest).context("parse digest")
     }
 
     /// Pull the bytes of a layer from the registry in a stream.

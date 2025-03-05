@@ -1,5 +1,7 @@
 use circe_lib::{
-    registry::Registry, Authentication, Filters, LayerDescriptor, Platform, Reference,
+    extract::{extract, Strategy},
+    registry::Registry,
+    Authentication, Filters, Platform, Reference,
 };
 use clap::{Args, Parser, ValueEnum};
 use color_eyre::eyre::{bail, Context, Result};
@@ -14,6 +16,10 @@ pub struct Options {
     target: Target,
 
     /// Directory to which the extracted contents will be written
+    ///
+    /// Layers are extracted into a subdirectory according to the `layers` option;
+    /// an `image.json` file is written to the output directory directly
+    /// describing the output.
     #[arg(default_value = ".")]
     output_dir: String,
 
@@ -127,10 +133,7 @@ pub struct Target {
 
 #[derive(Copy, Clone, Debug, Default, ValueEnum)]
 pub enum Mode {
-    /// Squash all layers into a single output
-    ///
-    /// This results in the output directory containing the same equivalent file system
-    /// as if the container was actually booted.
+    /// Squash all layers into a single output directory.
     #[default]
     Squash,
 
@@ -140,8 +143,10 @@ pub enum Mode {
     /// Squash all "other" layers; "other" layers are all layers except the base layer.
     SquashOther,
 
+    /// Extract the base layer and all "other" layers; "other" layers are all layers except the base layer.
+    BaseAndSquashOther,
+
     /// Extract all layers to a separate directory for each layer.
-    /// Also writes a `layers.json` file containing the list of layers in application order.
     Separate,
 }
 
@@ -171,79 +176,36 @@ pub async fn main(opts: Options) -> Result<()> {
         .context("configure remote registry")?;
 
     let layers = registry.layers().await.context("list layers")?;
-    match opts.layers {
-        Mode::Squash => squash(&registry, &output, layers).await,
-        Mode::SquashOther => squash(&registry, &output, layers.into_iter().skip(1)).await,
-        Mode::Base => squash(&registry, &output, layers.into_iter().take(1)).await,
-        Mode::Separate => separate(&registry, &output, layers).await,
-    }
-}
-
-async fn squash(
-    registry: &Registry,
-    output: &PathBuf,
-    layers: impl IntoIterator<Item = LayerDescriptor>,
-) -> Result<()> {
-    let layers = layers.into_iter();
-    let count = layers.size_hint();
-    let count = count.1.unwrap_or(count.0);
-    info!("enumerated {count} {}", plural(count, "layer", "layers"));
-
-    for (descriptor, layer) in layers.zip(1usize..) {
-        debug!(?descriptor, layer, count, "applying layer");
-        if count > 0 {
-            info!(layer = %descriptor, "applying layer {layer} of {count}");
-        } else {
-            info!(layer = %descriptor, "applying layer {layer}");
-        }
-
-        registry
-            .apply_layer(&descriptor, &output)
-            .await
-            .with_context(|| format!("apply layer {descriptor} to {output:?}"))?;
+    if layers.is_empty() {
+        bail!("no layers to extract found in image");
     }
 
-    info!("finished applying layers");
-    Ok(())
-}
+    let strategies = match opts.layers {
+        Mode::Squash => vec![Strategy::Squash(layers)],
+        Mode::SquashOther => vec![Strategy::Squash(layers.into_iter().skip(1).collect())],
+        Mode::Base => vec![Strategy::Squash(layers.into_iter().take(1).collect())],
+        Mode::Separate => layers.into_iter().map(Strategy::Separate).collect(),
+        Mode::BaseAndSquashOther => match layers.as_slice() {
+            [] => unreachable!(),
+            [base] => vec![Strategy::Separate(base.clone())],
+            [base, rest @ ..] => vec![
+                Strategy::Separate(base.clone()),
+                Strategy::Squash(rest.to_vec()),
+            ],
+        },
+    };
 
-async fn separate(
-    registry: &Registry,
-    output: &PathBuf,
-    layers: impl IntoIterator<Item = LayerDescriptor>,
-) -> Result<()> {
-    let layers = layers.into_iter().collect::<Vec<_>>();
-    let count = layers.len();
-    info!("enumerated {count} {}", plural(count, "layer", "layers"));
-
-    for (descriptor, layer) in layers.iter().zip(1usize..) {
-        debug!(?descriptor, layer, count, "applying layer");
-        let output = output.join(descriptor.digest.as_hex());
-        if count > 0 {
-            info!(layer = %descriptor, "applying layer {layer} of {count}");
-        } else {
-            info!(layer = %descriptor, "applying layer {layer}");
-        }
-
-        registry
-            .apply_layer(&descriptor, &output)
-            .await
-            .with_context(|| format!("apply layer {descriptor} to {output:?}"))?;
-    }
-
-    info!("finished applying layers");
-    let index_destination = output.join("layers.json");
-    let index = layers
-        .into_iter()
-        .map(|l| l.digest.as_hex())
-        .collect::<Vec<_>>();
-
-    debug!(?index, ?index_destination, "serializing layer index");
-    let index = serde_json::to_string_pretty(&index).context("serialize layer index")?;
-    tokio::fs::write(&index_destination, index)
+    let report = extract(&registry, &output, strategies)
         .await
-        .context("write layer index")
-        .inspect(|_| info!(path = ?index_destination, "layer index written"))
+        .context("extract image")?;
+
+    report
+        .write(&output)
+        .await
+        .context("write report to disk")?;
+
+    println!("{}", report.render()?);
+    Ok(())
 }
 
 /// Given a (probably relative) path to a directory, canonicalize it to an absolute path.
@@ -271,12 +233,4 @@ fn canonicalize_output_dir(path: &str, overwrite: bool) -> Result<PathBuf> {
     info!(?path, "creating new output directory");
     std::fs::create_dir_all(&path).context("create parent dir")?;
     std::fs::canonicalize(&path).context("canonicalize path")
-}
-
-fn plural<'a>(count: usize, singular: &'a str, plural: &'a str) -> &'a str {
-    if count == 1 {
-        singular
-    } else {
-        plural
-    }
 }
