@@ -92,10 +92,10 @@ impl DockerConfig {
     async fn auth(&self, host: &str) -> Result<Authentication> {
         for key in Self::auth_keys(host) {
             if let Some(auth) = self.auths.get(key) {
-                match auth.decode(self, host).await {
+                match auth.decode(self, key).await {
                     Ok(auth) => return Ok(auth),
                     Err(err) => {
-                        warn!("failed decoding auth for host {key}: {err}");
+                        warn!("failed decoding auth for host {key:?}: {err:?}");
                         continue;
                     }
                 }
@@ -170,6 +170,7 @@ impl DockerAuth {
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
             return Err(eyre!("auth helper failed with status: {}", output.status))
                 .with_section(|| binary.clone().header("Helper binary:"))
+                .with_section(|| host.to_string().header("Host:"))
                 .with_section(|| output.status.to_string().header("Command status code:"))
                 .with_section(|| stderr.header("Stderr:"))
                 .with_section(|| stdout.header("Stdout:"));

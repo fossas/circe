@@ -25,7 +25,7 @@ use tracing::{debug, warn};
 use crate::{
     ext::PriorityFind,
     transform::{self, Chunk},
-    Authentication, Digest, Filter, FilterMatch, Filters, LayerDescriptor, LayerMediaType,
+    Authentication, Digest, Filter, FilterMatch, Filters, Layer, LayerMediaType,
     LayerMediaTypeFlag, Platform, Reference, Version,
 };
 
@@ -52,6 +52,9 @@ macro_rules! unwrap_warn {
 pub struct Registry {
     /// The OCI reference, used by the underlying client.
     reference: OciReference,
+
+    /// The original reference used to construct the registry.
+    pub original: Reference,
 
     /// Authentication information for the registry.
     auth: RegistryAuth,
@@ -92,6 +95,7 @@ impl Registry {
         reference: Reference,
     ) -> Result<Self> {
         let client = client(platform.clone());
+        let original = reference.clone();
         let reference = OciReference::from(&reference);
         let auth = auth
             .map(RegistryAuth::from)
@@ -106,6 +110,7 @@ impl Registry {
             auth,
             client,
             reference,
+            original,
             layer_filters: layer_filters.unwrap_or_default(),
             file_filters: file_filters.unwrap_or_default(),
         })
@@ -116,7 +121,7 @@ impl Registry {
     /// Enumerate layers for a container reference in the remote registry.
     /// Layers are returned in order from the base image to the application.
     #[tracing::instrument]
-    pub async fn layers(&self) -> Result<Vec<LayerDescriptor>> {
+    pub async fn layers(&self) -> Result<Vec<Layer>> {
         let (manifest, _) = self
             .client
             .pull_image_manifest(&self.reference, &self.auth)
@@ -126,8 +131,19 @@ impl Registry {
             .layers
             .into_iter()
             .filter(|layer| self.layer_filters.matches(layer))
-            .map(LayerDescriptor::try_from)
+            .map(Layer::try_from)
             .collect()
+    }
+
+    /// Report the digest for the image.
+    #[tracing::instrument]
+    pub async fn digest(&self) -> Result<Digest> {
+        let (_, digest) = self
+            .client
+            .pull_image_manifest(&self.reference, &self.auth)
+            .await
+            .context("pull image manifest")?;
+        Digest::from_str(&digest).context("parse digest")
     }
 
     /// Pull the bytes of a layer from the registry in a stream.
@@ -146,19 +162,13 @@ impl Registry {
     /// - A file is added.
     /// - A file is removed.
     /// - A file is modified.
-    pub async fn pull_layer(
-        &self,
-        layer: &LayerDescriptor,
-    ) -> Result<impl Stream<Item = Result<Bytes>>> {
+    pub async fn pull_layer(&self, layer: &Layer) -> Result<impl Stream<Item = Result<Bytes>>> {
         self.pull_layer_internal(layer)
             .await
             .map(|stream| stream.map(|chunk| chunk.context("read chunk")))
     }
 
-    async fn pull_layer_internal(
-        &self,
-        layer: &LayerDescriptor,
-    ) -> Result<impl Stream<Item = Chunk>> {
+    async fn pull_layer_internal(&self, layer: &Layer) -> Result<impl Stream<Item = Chunk>> {
         let oci_layer = OciDescriptor::from(layer);
         self.client
             .pull_blob_stream(&self.reference, &oci_layer)
@@ -169,7 +179,7 @@ impl Registry {
 
     /// Enumerate files in a layer.
     #[tracing::instrument]
-    pub async fn list_files(&self, layer: &LayerDescriptor) -> Result<Vec<String>> {
+    pub async fn list_files(&self, layer: &Layer) -> Result<Vec<String>> {
         let stream = self.pull_layer_internal(layer).await?;
 
         // Applying the layer requires interpreting the layer's media type.
@@ -257,7 +267,7 @@ impl Registry {
     // then still applying them serially. Since network transfer is the slowest part of this process,
     // this would speed up the overall process.
     #[tracing::instrument]
-    pub async fn apply_layer(&self, layer: &LayerDescriptor, output: &Path) -> Result<()> {
+    pub async fn apply_layer(&self, layer: &Layer, output: &Path) -> Result<()> {
         let stream = self.pull_layer_internal(layer).await?;
 
         // Applying the layer requires interpreting the layer's media type.
@@ -525,8 +535,8 @@ impl From<&Reference> for OciReference {
     }
 }
 
-impl From<LayerDescriptor> for OciDescriptor {
-    fn from(layer: LayerDescriptor) -> Self {
+impl From<Layer> for OciDescriptor {
+    fn from(layer: Layer) -> Self {
         Self {
             digest: layer.digest.to_string(),
             media_type: layer.media_type.to_string(),
@@ -536,13 +546,13 @@ impl From<LayerDescriptor> for OciDescriptor {
     }
 }
 
-impl From<&LayerDescriptor> for OciDescriptor {
-    fn from(layer: &LayerDescriptor) -> Self {
+impl From<&Layer> for OciDescriptor {
+    fn from(layer: &Layer) -> Self {
         layer.clone().into()
     }
 }
 
-impl TryFrom<OciDescriptor> for LayerDescriptor {
+impl TryFrom<OciDescriptor> for Layer {
     type Error = color_eyre::Report;
 
     fn try_from(value: OciDescriptor) -> Result<Self, Self::Error> {
@@ -563,8 +573,8 @@ impl From<Authentication> for RegistryAuth {
     }
 }
 
-impl FilterMatch<&LayerDescriptor> for Filter {
-    fn matches(&self, value: &LayerDescriptor) -> bool {
+impl FilterMatch<&Layer> for Filter {
+    fn matches(&self, value: &Layer) -> bool {
         self.matches(&value.digest.to_string())
     }
 }
