@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::{registry::Registry, Digest, LayerDescriptor, Reference};
+use crate::{registry::Registry, Digest, Layer, Reference};
 use bon::Builder;
 use color_eyre::{
     eyre::{Context, Error},
@@ -16,18 +16,22 @@ use tracing::info;
 #[derive(Debug, Serialize, Builder)]
 pub struct Report {
     /// The orginal requested reference of the image that was extracted.
+    #[builder(into)]
     pub reference: Reference,
 
     /// The name of the image.
+    #[builder(into)]
     pub name: String,
 
     /// The digest of the image.
+    #[builder(into)]
     pub digest: String,
 
     /// The layers that were extracted, and the paths into which they were extracted.
     ///
     /// If multiple layer digests point to the same directory,
     /// this means they were squashed in the order indicated.
+    #[builder(into)]
     pub layers: Vec<(Digest, PathBuf)>,
 }
 
@@ -53,10 +57,19 @@ impl Report {
 /// The strategy used to extract one or more layers.
 pub enum Strategy {
     /// The indicated layers are squashed into a single layer.
-    Squash(Vec<LayerDescriptor>),
+    Squash(Vec<Layer>),
 
     /// The layer is extracted as-is.
-    Separate(LayerDescriptor),
+    Separate(Layer),
+}
+
+impl IntoIterator for Strategy {
+    type Item = Strategy;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        vec![self].into_iter()
+    }
 }
 
 /// Extract the layers.
@@ -92,7 +105,7 @@ pub async fn extract(
 async fn squash(
     registry: &Registry,
     output: &PathBuf,
-    layers: &[LayerDescriptor],
+    layers: &[Layer],
 ) -> Result<Vec<(Digest, PathBuf)>> {
     let target = target_dir(output, layers);
     info!(layers = ?layers.iter().map(|l| &l.digest).collect::<Vec<_>>(), target = ?target.display(), "squash layers");
@@ -110,7 +123,7 @@ async fn squash(
 async fn copy(
     registry: &Registry,
     output: &PathBuf,
-    layer: LayerDescriptor,
+    layer: Layer,
 ) -> Result<Vec<(Digest, PathBuf)>> {
     let target = target_dir(output, [&layer]);
     info!(layer = ?layer.digest, target = ?target.display(), "copy layer");
@@ -127,10 +140,9 @@ async fn copy(
 ///
 /// Each variant has a short prefix; this is to handle the fact that it's technically possible
 /// to have layer digests clash. This really shouldn't ever happen, but better to be safe.
-fn target_dir<'a>(
-    output: &Path,
-    layers: impl IntoIterator<Item = &'a LayerDescriptor> + 'a,
-) -> PathBuf {
+/// Note that this is considered an implementation detail; the presence or stability of this identifier
+/// is not part of the public contract of this application.
+fn target_dir<'a>(output: &Path, layers: impl IntoIterator<Item = &'a Layer> + 'a) -> PathBuf {
     output.join(match layers.into_iter().collect::<Vec<_>>().as_slice() {
         [] => unreachable!("empty layers"),
         [layer] => format!("si_{}", layer.digest.as_hex()),

@@ -7,6 +7,7 @@ use color_eyre::{
 };
 use derive_more::derive::{Debug, Display, From};
 use enum_assoc::Assoc;
+use extract::Strategy;
 use itertools::Itertools;
 use serde::{Serialize, Serializer};
 use std::{borrow::Cow, ops::Add, path::PathBuf, str::FromStr};
@@ -364,6 +365,18 @@ impl Serialize for Digest {
     }
 }
 
+impl From<Digest> for String {
+    fn from(digest: Digest) -> Self {
+        digest.to_string()
+    }
+}
+
+impl From<&Digest> for String {
+    fn from(digest: &Digest) -> Self {
+        digest.to_string()
+    }
+}
+
 /// Version identifier for a container image.
 ///
 /// This can be a named tag or a SHA256 digest.
@@ -564,7 +577,7 @@ impl std::fmt::Display for Reference {
 /// A descriptor for a specific layer within an OCI container image.
 /// This follows the OCI Image Spec's layer descriptor format.
 #[derive(Debug, Clone, PartialEq, Eq, Builder)]
-pub struct LayerDescriptor {
+pub struct Layer {
     /// The content-addressable digest of the layer
     #[builder(into)]
     pub digest: Digest,
@@ -576,15 +589,27 @@ pub struct LayerDescriptor {
     pub media_type: LayerMediaType,
 }
 
-impl From<&LayerDescriptor> for LayerDescriptor {
-    fn from(layer: &LayerDescriptor) -> Self {
+impl From<&Layer> for Layer {
+    fn from(layer: &Layer) -> Self {
         layer.clone()
     }
 }
 
-impl std::fmt::Display for LayerDescriptor {
+impl std::fmt::Display for Layer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.digest)
+    }
+}
+
+impl From<Layer> for Strategy {
+    fn from(layer: Layer) -> Self {
+        Strategy::Separate(layer)
+    }
+}
+
+impl From<&Layer> for Strategy {
+    fn from(layer: &Layer) -> Self {
+        Strategy::Separate(layer.clone())
     }
 }
 
