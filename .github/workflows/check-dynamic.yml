@@ -51,29 +51,19 @@ jobs:
       with:
         tool: cross
 
-    - uses: docker/login-action@v3
-      if: ${{ matrix.settings.host == 'ubuntu-latest' }}
-      with:
-        registry: quay.io
-        username: fossa+sparkle
-        password: ${{ secrets.QUAY_API_KEY }}
-    - uses: docker/login-action@v3
-      if: ${{ matrix.settings.host == 'ubuntu-latest' }}
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ github.token }}
-    - uses: docker/login-action@v3
-      if: ${{ matrix.settings.host == 'ubuntu-latest' }}
-      with:
-        registry: docker.io
-        username: fossaeng
-        password: ${{ secrets.DOCKERHUB_API_KEY }}
-
     - name: tests
       run: |
         CARGO_COMMAND=${{ matrix.settings.cross && 'cross' || 'cargo' }}
+        HAS_DOCKER=${{ matrix.settings.host == 'ubuntu-latest' }}
         FEATURES=${{ matrix.settings.host == 'ubuntu-latest' && 'test-docker-interop' || 'default' }}
+
+        if [ "$HAS_DOCKER" = "true" ]; then
+          docker login -u fossaeng --password-stdin <<< ${{ secrets.DOCKERHUB_API_KEY }}
+          docker login quay.io -u fossa+sparkle --password-stdin <<< ${{ secrets.QUAY_API_KEY }}
+          docker login ghcr.io -u ${{ github.actor }} --password-stdin <<< ${{ github.token }}
+          cat ~/.docker/config.json
+        fi
+
         if [ "$CARGO_COMMAND" = "cross" ]; then
           $CARGO_COMMAND test --all-targets --features $FEATURES --target ${{ matrix.settings.target }}
         else
