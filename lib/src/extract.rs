@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::{registry::Registry, Digest, Layer, Reference};
 use bon::Builder;
 use color_eyre::{
-    eyre::{Context, Error},
+    eyre::{bail, Context, Error},
     Result,
 };
 use futures_lite::{stream, StreamExt};
@@ -107,7 +107,7 @@ async fn squash(
     output: &PathBuf,
     layers: &[Layer],
 ) -> Result<Vec<(Digest, PathBuf)>> {
-    let target = target_dir(output, layers);
+    let target = target_dir(output, layers).context("target dir")?;
     info!(layers = ?layers.iter().map(|l| &l.digest).collect::<Vec<_>>(), target = ?target.display(), "squash layers");
 
     stream::iter(layers)
@@ -125,7 +125,7 @@ async fn copy(
     output: &PathBuf,
     layer: Layer,
 ) -> Result<Vec<(Digest, PathBuf)>> {
-    let target = target_dir(output, [&layer]);
+    let target = target_dir(output, [&layer]).context("target dir")?;
     info!(layer = ?layer.digest, target = ?target.display(), "copy layer");
 
     tokio::fs::create_dir_all(&target).await?;
@@ -142,9 +142,12 @@ async fn copy(
 /// to have layer digests clash. This really shouldn't ever happen, but better to be safe.
 /// Note that this is considered an implementation detail; the presence or stability of this identifier
 /// is not part of the public contract of this application.
-fn target_dir<'a>(output: &Path, layers: impl IntoIterator<Item = &'a Layer> + 'a) -> PathBuf {
-    output.join(match layers.into_iter().collect::<Vec<_>>().as_slice() {
-        [] => unreachable!("empty layers"),
+fn target_dir<'a>(
+    output: &Path,
+    layers: impl IntoIterator<Item = &'a Layer> + 'a,
+) -> Result<PathBuf> {
+    match layers.into_iter().collect::<Vec<_>>().as_slice() {
+        [] => bail!("empty layers"),
         [layer] => format!("si_{}", layer.digest.as_hex()),
         layers => layers
             .iter()
@@ -156,5 +159,7 @@ fn target_dir<'a>(output: &Path, layers: impl IntoIterator<Item = &'a Layer> + '
             .to_vec()
             .pipe_ref(hex::encode)
             .pipe(|hash| format!("sq_{hash}")),
-    })
+    }
+    .pipe(|name| output.join(name))
+    .pipe(Ok)
 }
