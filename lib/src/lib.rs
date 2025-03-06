@@ -18,6 +18,7 @@ use tracing::{debug, warn};
 mod docker;
 mod ext;
 pub mod extract;
+pub mod fossacli;
 pub mod registry;
 pub mod transform;
 
