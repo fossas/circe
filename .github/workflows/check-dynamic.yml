@@ -53,15 +53,14 @@ jobs:
 
     - name: tests
       run: |
+        HAS_DOCKER=${{ !matrix.settings.cross && matrix.settings.host == 'ubuntu-latest' }}
         CARGO_COMMAND=${{ matrix.settings.cross && 'cross' || 'cargo' }}
-        HAS_DOCKER=${{ matrix.settings.host == 'ubuntu-latest' }}
-        FEATURES=${{ matrix.settings.host == 'ubuntu-latest' && 'test-docker-interop' || 'default' }}
+        FEATURES=${{ (!matrix.settings.cross && matrix.settings.host == 'ubuntu-latest') && 'test-docker-interop' || 'default' }}
 
         if [ "$HAS_DOCKER" = "true" ]; then
           docker login -u fossaeng --password-stdin <<< ${{ secrets.DOCKERHUB_API_KEY }}
           docker login quay.io -u fossa+sparkle --password-stdin <<< ${{ secrets.QUAY_API_KEY }}
           docker login ghcr.io -u ${{ github.actor }} --password-stdin <<< ${{ github.token }}
-          cat ~/.docker/config.json
         fi
 
         if [ "$CARGO_COMMAND" = "cross" ]; then
