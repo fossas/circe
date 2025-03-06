@@ -75,6 +75,10 @@ async fn report_roundtrip() -> Result<()> {
 #[test_case("cgr.dev/chainguard/wolfi-base:latest"; "cgr.dev/chainguard/wolfi-base:latest")]
 #[test_case("docker.io/contribsys/faktory:latest"; "docker.io/contribsys/faktory:latest")]
 #[test_log::test(tokio::test)]
+#[cfg_attr(
+    not(feature = "test-docker-interop"),
+    ignore = "ignoring tests that require docker to be installed"
+)]
 async fn report(image: &str) -> Result<()> {
     let reference = image.parse::<Reference>()?;
     let registry = Registry::builder().reference(reference).build().await?;
@@ -110,6 +114,10 @@ async fn report(image: &str) -> Result<()> {
 #[test_case("cgr.dev/chainguard/wolfi-base:latest"; "cgr.dev/chainguard/wolfi-base:latest")]
 #[test_case("docker.io/contribsys/faktory:latest"; "docker.io/contribsys/faktory:latest")]
 #[test_log::test(tokio::test)]
+#[cfg_attr(
+    not(feature = "test-docker-interop"),
+    ignore = "ignoring tests that require docker to be installed"
+)]
 async fn squash(image: &str) -> Result<()> {
     let reference = image.parse::<Reference>()?;
     let registry = Registry::builder().reference(reference).build().await?;
@@ -131,6 +139,10 @@ async fn squash(image: &str) -> Result<()> {
 #[test_case("cgr.dev/chainguard/wolfi-base:latest"; "cgr.dev/chainguard/wolfi-base:latest")]
 #[test_case("docker.io/contribsys/faktory:latest"; "docker.io/contribsys/faktory:latest")]
 #[test_log::test(tokio::test)]
+#[cfg_attr(
+    not(feature = "test-docker-interop"),
+    ignore = "ignoring tests that require docker to be installed"
+)]
 async fn base(image: &str) -> Result<()> {
     let reference = image.parse::<Reference>()?;
     let registry = Registry::builder().reference(reference).build().await?;
@@ -155,6 +167,10 @@ async fn base(image: &str) -> Result<()> {
 /// Requires an image with more than one layer
 #[test_case("docker.io/contribsys/faktory:latest"; "docker.io/contribsys/faktory:latest")]
 #[test_log::test(tokio::test)]
+#[cfg_attr(
+    not(feature = "test-docker-interop"),
+    ignore = "ignoring tests that require docker to be installed"
+)]
 async fn squash_other(image: &str) -> Result<()> {
     let reference = image.parse::<Reference>()?;
     let registry = Registry::builder().reference(reference).build().await?;
@@ -180,6 +196,10 @@ async fn squash_other(image: &str) -> Result<()> {
 /// Requires an image with more than one layer
 #[test_case("docker.io/contribsys/faktory:latest"; "docker.io/contribsys/faktory:latest")]
 #[test_log::test(tokio::test)]
+#[cfg_attr(
+    not(feature = "test-docker-interop"),
+    ignore = "ignoring tests that require docker to be installed"
+)]
 async fn base_and_squash_other(image: &str) -> Result<()> {
     let reference = image.parse::<Reference>()?;
     let registry = Registry::builder().reference(reference).build().await?;
@@ -209,6 +229,10 @@ async fn base_and_squash_other(image: &str) -> Result<()> {
 #[test_case("cgr.dev/chainguard/wolfi-base:latest"; "cgr.dev/chainguard/wolfi-base:latest")]
 #[test_case("docker.io/contribsys/faktory:latest"; "docker.io/contribsys/faktory:latest")]
 #[test_log::test(tokio::test)]
+#[cfg_attr(
+    not(feature = "test-docker-interop"),
+    ignore = "ignoring tests that require docker to be installed"
+)]
 async fn separate(image: &str) -> Result<()> {
     let reference = image.parse::<Reference>()?;
     let registry = Registry::builder().reference(reference).build().await?;

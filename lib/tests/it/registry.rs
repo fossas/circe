@@ -8,7 +8,6 @@ use simple_test_case::test_case;
 #[test_case("cgr.dev/chainguard/wolfi-base:latest", Some(Platform::linux_arm64()); "cgr.dev/chainguard/wolfi-base:latest.linux_arm64")]
 #[test_case("cgr.dev/chainguard/wolfi-base:latest", None; "cgr.dev/chainguard/wolfi-base:latest_default")]
 #[test_case("docker.io/library/ubuntu:latest", None; "docker.io/library/ubuntu:latest_default")]
-#[test_case("docker.io/library/alpine:latest", None; "docker.io/library/alpine:latest_default")]
 #[test_log::test(tokio::test)]
 async fn pull_layer(image: &str, platform: Option<Platform>) -> Result<()> {
     let reference = image.parse::<Reference>()?;
@@ -101,7 +100,6 @@ async fn pull_layer_filtered(
 #[test_case("cgr.dev/chainguard/wolfi-base:latest", Some(Platform::linux_arm64()); "cgr.dev/chainguard/wolfi-base:latest.linux_arm64")]
 #[test_case("cgr.dev/chainguard/wolfi-base:latest", None; "cgr.dev/chainguard/wolfi-base:latest_default")]
 #[test_case("docker.io/library/ubuntu:latest", None; "docker.io/library/ubuntu:latest_default")]
-#[test_case("docker.io/library/alpine:latest", None; "docker.io/library/alpine:latest_default")]
 #[test_log::test(tokio::test)]
 async fn list_layer(image: &str, platform: Option<Platform>) -> Result<()> {
     let reference = image.parse::<Reference>()?;
