@@ -73,6 +73,7 @@ async fn report_roundtrip() -> Result<()> {
 }
 
 #[test_case("cgr.dev/chainguard/wolfi-base:latest"; "cgr.dev/chainguard/wolfi-base:latest")]
+#[test_case("docker.io/contribsys/faktory:latest"; "docker.io/contribsys/faktory:latest")]
 #[test_log::test(tokio::test)]
 async fn report(image: &str) -> Result<()> {
     let reference = image.parse::<Reference>()?;
@@ -106,7 +107,8 @@ async fn report(image: &str) -> Result<()> {
     Ok(())
 }
 
-#[test_case("docker.io/library/ubuntu:latest"; "docker.io/library/ubuntu:latest")]
+#[test_case("cgr.dev/chainguard/wolfi-base:latest"; "cgr.dev/chainguard/wolfi-base:latest")]
+#[test_case("docker.io/contribsys/faktory:latest"; "docker.io/contribsys/faktory:latest")]
 #[test_log::test(tokio::test)]
 async fn squash(image: &str) -> Result<()> {
     let reference = image.parse::<Reference>()?;
@@ -127,6 +129,7 @@ async fn squash(image: &str) -> Result<()> {
 }
 
 #[test_case("cgr.dev/chainguard/wolfi-base:latest"; "cgr.dev/chainguard/wolfi-base:latest")]
+#[test_case("docker.io/contribsys/faktory:latest"; "docker.io/contribsys/faktory:latest")]
 #[test_log::test(tokio::test)]
 async fn base(image: &str) -> Result<()> {
     let reference = image.parse::<Reference>()?;
@@ -149,7 +152,8 @@ async fn base(image: &str) -> Result<()> {
     Ok(())
 }
 
-#[test_case("docker.io/library/ubuntu:latest"; "docker.io/library/ubuntu:latest")]
+/// Requires an image with more than one layer
+#[test_case("docker.io/contribsys/faktory:latest"; "docker.io/contribsys/faktory:latest")]
 #[test_log::test(tokio::test)]
 async fn squash_other(image: &str) -> Result<()> {
     let reference = image.parse::<Reference>()?;
@@ -173,7 +177,8 @@ async fn squash_other(image: &str) -> Result<()> {
     Ok(())
 }
 
-#[test_case("docker.io/library/ubuntu:latest"; "docker.io/library/ubuntu:latest")]
+/// Requires an image with more than one layer
+#[test_case("docker.io/contribsys/faktory:latest"; "docker.io/contribsys/faktory:latest")]
 #[test_log::test(tokio::test)]
 async fn base_and_squash_other(image: &str) -> Result<()> {
     let reference = image.parse::<Reference>()?;
@@ -201,7 +206,8 @@ async fn base_and_squash_other(image: &str) -> Result<()> {
     Ok(())
 }
 
-#[test_case("docker.io/library/ubuntu:latest"; "docker.io/library/ubuntu:latest")]
+#[test_case("cgr.dev/chainguard/wolfi-base:latest"; "cgr.dev/chainguard/wolfi-base:latest")]
+#[test_case("docker.io/contribsys/faktory:latest"; "docker.io/contribsys/faktory:latest")]
 #[test_log::test(tokio::test)]
 async fn separate(image: &str) -> Result<()> {
     let reference = image.parse::<Reference>()?;
