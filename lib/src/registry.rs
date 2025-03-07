@@ -5,6 +5,7 @@ use std::{
     str::FromStr,
 };
 
+use async_tempfile::TempFile;
 use bytes::Bytes;
 use color_eyre::eyre::{Context, OptionExt, Result};
 use derive_more::Debug;
@@ -17,7 +18,7 @@ use oci_client::{
 };
 use os_str_bytes::OsStrBytesExt;
 use tap::Pipe;
-use tokio::io::AsyncRead;
+use tokio::io::{AsyncRead, AsyncWriteExt, BufWriter};
 use tokio_tar::{Archive, Entry};
 use tokio_util::io::StreamReader;
 use tracing::{debug, warn};
@@ -313,6 +314,78 @@ impl Registry {
             }
         }
     }
+
+    /// Normalize an OCI layer into a plain tarball layer.
+    /// This is intended to support FOSSA CLI's needs; see the [`fossacli`] module docs for details.
+    ///
+    /// The intention of this method is that when it is run for each layer in an image in order it is equivalent
+    /// to the functionality you'd get by running `docker pull`, `docker save`, and viewing the patch sets directly.
+    ///
+    /// The twist though is that OCI servers can wrap various kinds of compression around tarballs;
+    /// this method flattens them all down into plain uncompressed `.tar` files.
+    ///
+    /// As such the following edge cases are handled as follows:
+    /// - Standard layers are applied as normal, except that they are re-encoded to plain uncompressed tarballs.
+    /// - Foreign layers are treated as no-ops, as they would if you ran `docker pull`.
+    ///   These are emitted as `None`.
+    /// - File path filters are ignored.
+    ///   this is a consequence of the fact that we don't actually unpack and read the tarball.
+    ///   For the purposes of FOSSA CLI interop this is fine as the `reexport` subcommand doesn't even support filters,
+    ///   but if we ever want to make this work for more than just that we'll need to re-evaluate.
+    #[tracing::instrument]
+    pub async fn layer_plain_tarball(&self, layer: &Layer) -> Result<Option<TempFile>> {
+        let stream = self.pull_layer_internal(layer).await?;
+
+        // Applying the layer requires interpreting the layer's media type.
+        match &layer.media_type {
+            // Standard OCI layers.
+            LayerMediaType::Oci(flags) => {
+                // Foreign layers are skipped, as they would if you ran `docker pull`.
+                // This causes an extra iteration over the flags for layers that aren't foreign,
+                // but the flag count is small and this saves us the complexity of setting up layer transforms
+                // and then discarding them if this flag is encountered.
+                if flags.contains(&LayerMediaTypeFlag::Foreign) {
+                    warn!("skip: foreign layer");
+                    return Ok(None);
+                }
+
+                // The vast majority of the time (maybe even all the time), the layer only has zero or one flags.
+                // Meanwhile, `transform::sequence` forces the streams into dynamic dispatch, imposing extra overhead.
+                // This match allows us to specialize the stream based on the most common cases,
+                // while still supporting arbitrary flags.
+                Ok(Some(match flags.as_slice() {
+                    // No flags; this means the layer is already uncompressed.
+                    [] => collect_tmp(stream).await?,
+
+                    // The layer is compressed with zstd.
+                    [LayerMediaTypeFlag::Zstd] => transform::zstd(stream).pipe(collect_tmp).await?,
+
+                    // The layer is compressed with gzip.
+                    [LayerMediaTypeFlag::Gzip] => transform::gzip(stream).pipe(collect_tmp).await?,
+
+                    // The layer has a more complicated set of flags.
+                    // For this, we fall back to the generic sequence operator.
+                    _ => transform::sequence(stream, flags).pipe(collect_tmp).await?,
+                }))
+            }
+        }
+    }
+}
+
+/// Sink the stream into a temporary file.
+async fn collect_tmp(mut stream: impl Stream<Item = Chunk> + Unpin) -> Result<TempFile> {
+    let file = TempFile::new().await.context("create temp file")?;
+    let mut writer = BufWriter::new(file);
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.context("read chunk")?;
+        writer.write_all(&chunk).await.context("write chunk")?;
+    }
+    writer.flush().await.context("flush writer")?;
+
+    let file = writer.into_inner();
+    file.sync_all().await.context("sync file")?;
+    Ok(file)
 }
 
 /// Apply files in the tarball to a location on disk.
