@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::HashSet, path::PathBuf};
 
 use assert_fs::prelude::*;
 use color_eyre::{Result, eyre::Context};
@@ -18,6 +18,11 @@ use xshell::{Shell, cmd};
     "docker.io/fossaeng/changesets_symlinked_entries:latest",
     "integration/testdata/fossacli/changesets_symlinked_entries.tar";
     "fossaeng/changesets_symlinked_entries:latest"
+)]
+#[test_case(
+    "docker.io/fossaeng/app_deps_example:latest",
+    "integration/testdata/fossacli/app_deps_example.tar";
+    "fossaeng/app_deps_example:latest"
 )]
 #[test_log::test(tokio::test)]
 #[cfg_attr(
@@ -67,11 +72,12 @@ struct CliContainerImage {
 /// A layer reported by FOSSA CLI.
 ///
 /// Contains a subset of the FOSSA CLI output fields that we want to compare for equality.
+/// The order of observations and source units don't matter to FOSSA and therefore they don't matter to circe.
 #[derive(Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CliContainerLayer {
-    observations: Vec<Value>,
-    src_units: Vec<Value>,
+    observations: HashSet<Value>,
+    src_units: HashSet<Value>,
 }
 
 fn workspace_root() -> PathBuf {
