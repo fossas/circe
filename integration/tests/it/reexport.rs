@@ -7,8 +7,63 @@ use serde_json::Value;
 use simple_test_case::test_case;
 use xshell::{Shell, cmd};
 
-/// Test that the `circe reexport` command can create a tarball that is compatible
-/// with FOSSA CLI's container scanning functionality.
+/// Test that `circe reexport` then allows FOSSA CLI to scan images
+/// that have previously been ticketed as failing to be analyzed.
+#[test_case(
+    "gcr.io/go-containerregistry/crane";
+    "gcr.io/go-containerregistry/crane"
+)]
+#[test_case(
+    "nvcr.io/nvidia/cloud-native/gpu-operator-validator:v24.9.0";
+    "nvcr.io/nvidia/cloud-native/gpu-operator-validator:v24.9.0"
+)]
+#[test_case(
+    "registry.access.redhat.com/ubi9/ubi-minimal@sha256:fb77e447ab97f3fecd15d2fa5361a99fe2f34b41422e8ebb3612eecd33922fa0";
+    "registry.access.redhat.com/ubi9/ubi-minimal@sha256:fb77e447ab97f3fecd15d2fa5361a99fe2f34b41422e8ebb3612eecd33922fa0"
+)]
+#[test_case(
+    "alpine:3.16.0";
+    "alpine:3.16.0"
+)]
+#[test_case(
+    "index.docker.io/library/alpine:latest";
+    "index.docker.io/library/alpine:latest"
+)]
+#[test_log::test(tokio::test)]
+#[cfg_attr(
+    not(feature = "test-docker-interop"),
+    ignore = "ignoring tests that require docker to be installed"
+)]
+async fn scannable(image: &str) -> Result<()> {
+    let workspace = workspace_root();
+    let temp = assert_fs::TempDir::new().context("create temp dir")?;
+    let reexport = temp.child("reexport.tar").to_string_lossy().to_string();
+
+    tracing::info!(workspace = %workspace.display(), "create shell");
+    let sh = Shell::new().context("create shell")?;
+    sh.change_dir(&workspace);
+
+    tracing::info!(image, target = %reexport, "run circe reexport");
+    cmd!(sh, "cargo run -- reexport {image} {reexport}").run()?;
+
+    tracing::info!(target = %reexport, "run fossa container analyze");
+    let reexport_output = cmd!(sh, "fossa container analyze {reexport} -o").read()?;
+
+    tracing::info!(target = %reexport, "read cli output");
+    let reexport_output = serde_json::from_str::<CliContainerOutput>(&reexport_output)?;
+
+    // We don't have any images to compare, so we cannot do much in the way of assertions on the object.
+    // But at minimum, we can expect that the image should have contained layers.
+    assert!(
+        !reexport_output.image.layers.is_empty(),
+        "reexported image should have layers"
+    );
+
+    Ok(())
+}
+
+/// Test that the `circe reexport` command creates a tarball that when scanned with FOSSA CLI
+/// produces the same output as the original image (other than the `layerId`s).
 #[test_case(
     "docker.io/fossaeng/changeset_example:latest",
     "integration/testdata/fossacli/changeset_example.tar";
@@ -29,7 +84,7 @@ use xshell::{Shell, cmd};
     not(feature = "test-docker-interop"),
     ignore = "ignoring tests that require docker to be installed"
 )]
-async fn reexport(image: &str, reference: &str) -> Result<()> {
+async fn compare(image: &str, reference: &str) -> Result<()> {
     let workspace = workspace_root();
     let temp = assert_fs::TempDir::new().context("create temp dir")?;
     let reexport = temp.child("reexport.tar").to_string_lossy().to_string();
