@@ -57,7 +57,7 @@ impl Report {
 /// Extraction strategy for container layers.
 pub enum Strategy {
     /// Squash multiple layers into a single unified filesystem.
-    /// 
+    ///
     /// This applies layers in sequence, with each layer's changes
     /// overlaying previous layers' contents.
     Squash(Vec<Layer>),
