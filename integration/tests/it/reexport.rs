@@ -30,10 +30,6 @@ use xshell::{Shell, cmd};
     "index.docker.io/library/alpine:latest"
 )]
 #[test_log::test(tokio::test)]
-#[cfg_attr(
-    not(feature = "test-docker-interop"),
-    ignore = "ignoring tests that require docker to be installed"
-)]
 async fn scannable(image: &str) -> Result<()> {
     let workspace = workspace_root();
     let temp = assert_fs::TempDir::new().context("create temp dir")?;
