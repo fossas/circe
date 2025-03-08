@@ -54,14 +54,6 @@ jobs:
       with:
         tool: cross
 
-    - name: install fossa (windows)
-      if: matrix.settings.host == 'windows-latest'
-      run: iwr -useb https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.ps1 | iex
-
-    - name: install fossa (unix)
-      if: matrix.settings.host != 'windows-latest'
-      run: curl https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.sh | bash
-
     - name: tests
       run: |
         HAS_DOCKER=${{ !matrix.settings.cross && matrix.settings.host == 'ubuntu-latest' }}
@@ -93,11 +85,16 @@ jobs:
         OCI_DEFAULT_NAMESPACE: somecorp/someproject
       shell: bash
 
+    - name: doc tests
+      if: ${{ !matrix.settings.cross }}
+      run: cargo test --doc --target ${{ matrix.settings.target }}
+      shell: bash
+
       # We can't run the integration tests on cross compiled hosts because they try to run circe itself with `cargo run`.
       # For the purposes of the integration tests today, if they work on the standard host we're confident they'll work
       # when cross compiled, but if this ever changes we can revisit this setup.
-    - name: integration tests
-      if: ${{ !matrix.settings.cross }}
+    - name: integration tests (unix)
+      if: ${{ !matrix.settings.cross && matrix.settings.host != 'windows-latest' }}
       run: |
         HAS_DOCKER=${{ matrix.settings.host == 'ubuntu-latest' }}
         FEATURES=${{ matrix.settings.host == 'ubuntu-latest' && 'test-docker-interop,test-integration' || 'test-integration' }}
@@ -108,10 +105,12 @@ jobs:
           docker login ghcr.io -u ${{ github.actor }} --password-stdin <<< ${{ github.token }}
         fi
 
+        curl https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.sh | bash
         cargo nextest run -p circe_integration --features $FEATURES
       shell: bash
-
-    - name: doc tests
-      if: ${{ !matrix.settings.cross }}
-      run: cargo test --doc --target ${{ matrix.settings.target }}
-      shell: bash
+    - name: integration tests (windows)
+      if: ${{ !matrix.settings.cross && matrix.settings.host == 'windows-latest' }}
+      run: |
+        iwr -useb https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.ps1 | iex
+        cargo nextest run -p circe_integration --features test-integration
+      shell: powershell
