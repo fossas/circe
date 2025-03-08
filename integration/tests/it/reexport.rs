@@ -30,6 +30,10 @@ use xshell::{Shell, cmd};
     "index.docker.io/library/alpine:latest"
 )]
 #[test_log::test(tokio::test)]
+#[cfg_attr(
+    not(feature = "test-integration"),
+    ignore = "skipping integration tests"
+)]
 async fn scannable(image: &str) -> Result<()> {
     let workspace = workspace_root();
     let temp = assert_fs::TempDir::new().context("create temp dir")?;
@@ -60,6 +64,10 @@ async fn scannable(image: &str) -> Result<()> {
 
 /// Test that the `circe reexport` command creates a tarball that when scanned with FOSSA CLI
 /// produces the same output as the original image (other than the `layerId`s).
+///
+/// Note: the actual vendored tarballs are copied from the tarballs with the same name
+/// in the FOSSA CLI repository; the Dockerfiles used to build the versions in Docker Hub
+/// are slightly different but conceptually the same.
 #[test_case(
     "docker.io/fossaeng/changeset_example:latest",
     "integration/testdata/fossacli/changeset_example.tar";
@@ -77,8 +85,8 @@ async fn scannable(image: &str) -> Result<()> {
 )]
 #[test_log::test(tokio::test)]
 #[cfg_attr(
-    not(feature = "test-docker-interop"),
-    ignore = "ignoring tests that require docker to be installed"
+    not(all(feature = "test-docker-interop", feature = "test-integration")),
+    ignore = "skipping integration tests that require docker to be installed"
 )]
 async fn compare(image: &str, reference: &str) -> Result<()> {
     let workspace = workspace_root();
