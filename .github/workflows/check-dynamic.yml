@@ -58,6 +58,7 @@ jobs:
         FEATURES=${{ (!matrix.settings.cross && matrix.settings.host == 'ubuntu-latest') && 'test-docker-interop' || 'default' }}
 
         if [ "$HAS_DOCKER" = "true" ]; then
+          curl https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.sh | bash
           docker login -u fossaeng --password-stdin <<< ${{ secrets.DOCKERHUB_API_KEY }}
           docker login quay.io -u fossa+sparkle --password-stdin <<< ${{ secrets.QUAY_API_KEY }}
           docker login ghcr.io -u ${{ github.actor }} --password-stdin <<< ${{ github.token }}
