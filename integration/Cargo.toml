@@ -1,0 +1,33 @@
+[package]
+name = "circe_integration"
+version = "0.0.0"
+edition = "2024"
+authors = ["Jessica Black <me@jessica.black>", "FOSSA Inc. <support@fossa.com>"]
+description = "Integration tests for circe"
+license = "MPL-2.0"
+repository = "https://github.com/fossas/circe"
+homepage = "https://github.com/fossas/circe"
+documentation = "https://docs.rs/circe"
+publish = false
+
+[features]
+default = []
+test-docker-interop = []
+
+[dependencies]
+# No runtime dependencies, this is just a test crate
+
+[dev-dependencies]
+assert_cmd = "2.0.14"
+assert_fs = "1.1.1"
+color-eyre = "0.6.3"
+derive_more = { version = "2.0.1", features = ["full"] }
+predicates = "3.1.0"
+pretty_assertions = "1.4.1"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.138"
+simple_test_case = "1.1.0"
+test-log = { version = "0.2.15", features = ["trace"] }
+tokio = { version = "1.42.0", features = ["full"] }
+tracing = "0.1.41"
+xshell = "0.2.5"
