@@ -54,6 +54,14 @@ jobs:
       with:
         tool: cross
 
+    - name: install fossa (windows)
+      if: matrix.settings.host == 'windows-latest'
+      run: iwr -useb https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.ps1 | iex
+
+    - name: install fossa (unix)
+      if: matrix.settings.host != 'windows-latest'
+      run: curl https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.sh | bash
+
     - name: tests
       run: |
         HAS_DOCKER=${{ !matrix.settings.cross && matrix.settings.host == 'ubuntu-latest' }}
@@ -69,7 +77,6 @@ jobs:
         if [ "$CARGO_COMMAND" = "cross" ]; then
           $CARGO_COMMAND test --all-targets --features $FEATURES --target ${{ matrix.settings.target }}
         else
-          curl https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.sh | bash
           cargo nextest run --all-targets --features $FEATURES --target ${{ matrix.settings.target }}
         fi
       shell: bash
