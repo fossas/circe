@@ -1,19 +1,18 @@
-//! Circe is intended to support FOSSA CLI in its ability to pull images from remote OCI hosts that use a different
-//! container format than the one FOSSA CLI is built to support.
+//! Module for FOSSA CLI container compatibility support
 //!
-//! Meanwhile FOSSA CLI has been built with the assumption that the tarball is the baseline unit
-//! of container scanning; all operations end with "... and then make it a tarball and scan it".
-//! Untangling this and turning it into "scan the contents of a directory" is a larger lift
-//! than that for which this project currently has budget.
+//! This module enables Circe to bridge between remote OCI container formats
+//! and the tarball format expected by FOSSA CLI's container scanning system.
 //!
-//! As such, this module supports Circe being able to work around this by becoming a "middle layer".
-//! I've done my best to reconstruct the functionality used by FOSSA CLI,
-//! but actual tarballs used in FOSSA CLI test data are also vendored at `/lib/tests/it/testdata/fossacli`;
-//! unpacking them and looking at the content will likely be instructive if you're working on this.
+//! FOSSA CLI processes container images as tarballs during analysis.
+//! This module provides the necessary types and conversion utilities
+//! to transform container images into the specific tarball format
+//! that FOSSA CLI can parse and analyze.
 //!
-//! These tarballs have also been pushed remotely in the `fossaeng` dockerhub account,
-//! but note that the actual tarballs vendored into the repo are more accurate since they're "frozen in time"
-//! and are therefore not subject to docker drift.
+//! For reference implementations, see the test data in `/lib/tests/it/testdata/fossacli`
+//! which contains example tarballs that match FOSSA CLI's expected format.
+//! These examples are also available in the `fossaeng` DockerHub account,
+//! though the vendored examples in this repo are more reliable as reference
+//! implementations since they are not subject to Docker platform changes.
 
 use std::path::PathBuf;
 
@@ -95,10 +94,10 @@ pub struct ManifestEntry {
     layers: Vec<PathBuf>,
 }
 
-/// Describes a single image in the tarball.
+/// Container image configuration for FOSSA CLI.
 #[derive(Debug, Clone, Serialize)]
 pub struct Image {
-    /// The rootfs of the image.
+    /// The root filesystem definition containing the container's layer information.
     pub rootfs: RootFs,
 }
 
@@ -127,14 +126,20 @@ impl From<&RootFs> for Image {
     }
 }
 
-/// Describes the rootfs for an image in the tarball.
+/// Root filesystem structure for a container image.
+///
+/// This defines how container layers are organized in the filesystem.
+/// FOSSA CLI uses this structure to understand which layers make up
+/// the container and in what order they should be applied.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum RootFs {
-    /// The rootfs is a list of layers.
-    /// This is the only kind of rootfs supported by FOSSA CLI.
+    /// A layered filesystem structure composed of multiple layer diff IDs.
+    ///
+    /// This is the only rootfs type supported by FOSSA CLI's container analyzer.
+    /// The layers must be listed in application order (base layer first).
     Layers {
-        /// The diff ids of the layers.
+        /// The content-addressable digests of each layer in application order.
         diff_ids: Vec<String>,
     },
 }
@@ -148,6 +153,7 @@ impl RootFs {
     }
 }
 
+/// Serializes a value to JSON and writes it to a temporary file.
 async fn write_serialized_tempfile<T: Serialize>(value: &T) -> Result<(TempFile, String)> {
     let mut file = TempFile::new().await.context("create")?;
     let value = serde_json::to_string_pretty(&value).context("serialize")?;

@@ -17,11 +17,11 @@ use crate::extract::Target;
 
 #[derive(Debug, Parser)]
 pub struct Options {
-    /// Target to re-export
+    /// Target container image to re-export
     #[clap(flatten)]
     target: Target,
 
-    /// File path to which the re-exported image will be written
+    /// File path where the re-exported tarball will be written
     #[arg(default_value = "image.tar")]
     output: String,
 }
