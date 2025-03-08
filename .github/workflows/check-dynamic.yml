@@ -106,11 +106,13 @@ jobs:
         fi
 
         curl https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.sh | bash
+        cargo build
         cargo nextest run -p circe_integration --features $FEATURES
       shell: bash
     - name: integration tests (windows)
       if: ${{ !matrix.settings.cross && matrix.settings.host == 'windows-latest' }}
       run: |
         iwr -useb https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.ps1 | iex
+        cargo build
         cargo nextest run -p circe_integration --features test-integration
       shell: powershell
