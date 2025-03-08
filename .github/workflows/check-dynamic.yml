@@ -36,6 +36,9 @@ jobs:
     name: test / ${{ matrix.settings.host }} / ${{ matrix.settings.target }}
     steps:
     - uses: actions/checkout@v4
+      with:
+        lfs: true
+        fetch-depth: 2
     - uses: dtolnay/rust-toolchain@master
       with:
         toolchain: stable
