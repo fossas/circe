@@ -1,5 +1,5 @@
 [workspace]
-members = ["bin", "lib"]
+members = ["bin", "integration", "lib"]
 resolver = "2"
 
 [profile.release]

@@ -12,25 +12,25 @@ use sha2::{Digest as _, Sha256};
 use tap::Pipe;
 use tracing::info;
 
-/// Reports details about the image that was extracted.
+/// Report containing details about the extracted container image.
 #[derive(Debug, Serialize, Builder)]
 pub struct Report {
-    /// The orginal requested reference of the image that was extracted.
+    /// The original reference requested when extracting the image.
     #[builder(into)]
     pub reference: Reference,
 
-    /// The name of the image.
+    /// The repository name of the image.
     #[builder(into)]
     pub name: String,
 
-    /// The digest of the image.
+    /// The content-addressable digest of the image.
     #[builder(into)]
     pub digest: String,
 
-    /// The layers that were extracted, and the paths into which they were extracted.
+    /// The extracted layers and their corresponding filesystem paths.
     ///
-    /// If multiple layer digests point to the same directory,
-    /// this means they were squashed in the order indicated.
+    /// When multiple layer digests point to the same directory path,
+    /// it indicates those layers were squashed together in their application order.
     #[builder(into)]
     pub layers: Vec<(Digest, PathBuf)>,
 }
@@ -54,12 +54,15 @@ impl Report {
     }
 }
 
-/// The strategy used to extract one or more layers.
+/// Extraction strategy for container layers.
 pub enum Strategy {
-    /// The indicated layers are squashed into a single layer.
+    /// Squash multiple layers into a single unified filesystem.
+    ///
+    /// This applies layers in sequence, with each layer's changes
+    /// overlaying previous layers' contents.
     Squash(Vec<Layer>),
 
-    /// The layer is extracted as-is.
+    /// Extract a single layer to its own directory without combining it with others.
     Separate(Layer),
 }
 
@@ -72,7 +75,7 @@ impl IntoIterator for Strategy {
     }
 }
 
-/// Extract the layers.
+/// Extract container layers according to the specified strategies.
 pub async fn extract(
     registry: &Registry,
     output: &PathBuf,

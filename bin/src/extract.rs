@@ -17,9 +17,8 @@ pub struct Options {
 
     /// Directory to which the extracted contents will be written
     ///
-    /// Layers are extracted into a subdirectory according to the `layers` option;
-    /// an `image.json` file is written to the output directory directly
-    /// describing the output.
+    /// Layers are extracted into subdirectories based on the `layers` option.
+    /// An `image.json` file is written to this directory with details about the extracted content.
     #[arg(default_value = ".")]
     output_dir: String,
 
@@ -133,7 +132,7 @@ pub struct Target {
 
 #[derive(Copy, Clone, Debug, Default, ValueEnum)]
 pub enum Mode {
-    /// Squash all layers into a single output directory.
+    /// Squash all layers into a single output directory, resulting in a file system equivalent to a running container.
     #[default]
     Squash,
 
@@ -146,7 +145,7 @@ pub enum Mode {
     /// Extract the base layer and all "other" layers; "other" layers are all layers except the base layer.
     BaseAndSquashOther,
 
-    /// Extract all layers to a separate directory for each layer.
+    /// Extract all layers to a separate directory for each layer, with each directory named after the layer's digest.
     Separate,
 }
 

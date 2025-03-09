@@ -10,7 +10,7 @@ use crate::extract::Target;
 
 #[derive(Debug, Parser)]
 pub struct Options {
-    /// Target to list
+    /// Target container image to list layers and files from
     #[clap(flatten)]
     target: Target,
 }

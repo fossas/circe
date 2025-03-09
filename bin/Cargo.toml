@@ -26,3 +26,6 @@ circe_lib = { path = "../lib" }
 serde_json = "1.0.133"
 derive_more = { version = "2.0.1", features = ["debug"] }
 pluralizer = "0.5.0"
+tokio-tar = "0.3.1"
+tap = "1.0.1"
+async-tempfile = "0.7.0"
