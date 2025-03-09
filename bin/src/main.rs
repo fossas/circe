@@ -2,7 +2,7 @@ use clap::{
     builder::{styling::AnsiColor, Styles},
     Parser,
 };
-use color_eyre::eyre::Result;
+use color_eyre::{eyre::Result, Section};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{self, prelude::*};
 
@@ -71,14 +71,18 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let cli = Cli::parse();
-    match cli.command {
-        Commands::Extract(opts) => extract::main(opts).await?,
-        Commands::List(opts) => list::main(opts).await?,
-        Commands::Reexport(opts) => reexport::main(opts).await?,
+    match Cli::parse().command {
+        Commands::Extract(opts) => extract::main(opts).await,
+        Commands::List(opts) => list::main(opts).await,
+        Commands::Reexport(opts) => reexport::main(opts).await,
     }
-
-    Ok(())
+    .with_warning(|| {
+        concat!(
+            "Authentication errors are sometimes reported when the actual issue ",
+            "is that the specified image or tag does not exist. ",
+            "This depends on the behavior of the remote container registry.",
+        )
+    })
 }
 
 fn style() -> Styles {
