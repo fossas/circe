@@ -36,6 +36,9 @@ jobs:
     name: test / ${{ matrix.settings.host }} / ${{ matrix.settings.target }}
     steps:
     - uses: actions/checkout@v4
+      with:
+        lfs: true
+        fetch-depth: 2
     - uses: dtolnay/rust-toolchain@master
       with:
         toolchain: stable
@@ -51,26 +54,22 @@ jobs:
       with:
         tool: cross
 
-    - uses: docker/login-action@v3
-      if: ${{ matrix.settings.host == 'ubuntu-latest' }}
-      with:
-        registry: quay.io
-        username: fossa+sparkle
-        password: ${{ secrets.QUAY_API_KEY }}
-    - uses: docker/login-action@v3
-      if: ${{ matrix.settings.host == 'ubuntu-latest' }}
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ github.token }}
-
     - name: tests
       run: |
+        HAS_DOCKER=${{ !matrix.settings.cross && matrix.settings.host == 'ubuntu-latest' }}
         CARGO_COMMAND=${{ matrix.settings.cross && 'cross' || 'cargo' }}
+        FEATURES=${{ (!matrix.settings.cross && matrix.settings.host == 'ubuntu-latest') && 'test-docker-interop' || 'default' }}
+
+        if [ "$HAS_DOCKER" = "true" ]; then
+          docker login -u fossaeng --password-stdin <<< ${{ secrets.DOCKERHUB_API_KEY }}
+          docker login quay.io -u fossa+sparkle --password-stdin <<< ${{ secrets.QUAY_API_KEY }}
+          docker login ghcr.io -u ${{ github.actor }} --password-stdin <<< ${{ github.token }}
+        fi
+
         if [ "$CARGO_COMMAND" = "cross" ]; then
-          $CARGO_COMMAND test --all-targets --target ${{ matrix.settings.target }}
+          $CARGO_COMMAND test --all-targets --features $FEATURES --target ${{ matrix.settings.target }}
         else
-          cargo nextest run --all-targets --target ${{ matrix.settings.target }}
+          cargo nextest run --all-targets --features $FEATURES --target ${{ matrix.settings.target }}
         fi
       shell: bash
 
@@ -90,3 +89,30 @@ jobs:
       if: ${{ !matrix.settings.cross }}
       run: cargo test --doc --target ${{ matrix.settings.target }}
       shell: bash
+
+      # We can't run the integration tests on cross compiled hosts because they try to run circe itself with `cargo run`.
+      # For the purposes of the integration tests today, if they work on the standard host we're confident they'll work
+      # when cross compiled, but if this ever changes we can revisit this setup.
+    - name: integration tests (unix)
+      if: ${{ !matrix.settings.cross && matrix.settings.host != 'windows-latest' }}
+      run: |
+        HAS_DOCKER=${{ matrix.settings.host == 'ubuntu-latest' }}
+        FEATURES=${{ matrix.settings.host == 'ubuntu-latest' && 'test-docker-interop,test-integration' || 'test-integration' }}
+
+        if [ "$HAS_DOCKER" = "true" ]; then
+          docker login -u fossaeng --password-stdin <<< ${{ secrets.DOCKERHUB_API_KEY }}
+          docker login quay.io -u fossa+sparkle --password-stdin <<< ${{ secrets.QUAY_API_KEY }}
+          docker login ghcr.io -u ${{ github.actor }} --password-stdin <<< ${{ github.token }}
+        fi
+
+        curl https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.sh | bash
+        cargo build
+        cargo nextest run -p circe_integration --features $FEATURES
+      shell: bash
+    - name: integration tests (windows)
+      if: ${{ !matrix.settings.cross && matrix.settings.host == 'windows-latest' }}
+      run: |
+        iwr -useb https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.ps1 | iex
+        cargo build
+        cargo nextest run -p circe_integration --features test-integration
+      shell: powershell

@@ -7,7 +7,9 @@ use color_eyre::{
 };
 use derive_more::derive::{Debug, Display, From};
 use enum_assoc::Assoc;
+use extract::Strategy;
 use itertools::Itertools;
+use serde::{Serialize, Serializer};
 use std::{borrow::Cow, ops::Add, path::PathBuf, str::FromStr};
 use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 use tap::{Pipe, Tap};
@@ -15,6 +17,8 @@ use tracing::{debug, warn};
 
 mod docker;
 mod ext;
+pub mod extract;
+pub mod fossacli;
 pub mod registry;
 pub mod transform;
 
@@ -82,7 +86,7 @@ impl Authentication {
 /// let platform = Platform::from_str("linux/amd64").expect("parse platform");
 /// assert_eq!(platform.to_string(), "linux/amd64");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Builder)]
+#[derive(Debug, Clone, PartialEq, Eq, Builder, Serialize)]
 pub struct Platform {
     /// Operating system the container runs on (e.g. "linux", "windows", "darwin").
     ///
@@ -318,6 +322,11 @@ impl Digest {
     pub fn as_hex(&self) -> String {
         hex::encode(&self.hash)
     }
+
+    /// Returns the filename to use for a tarball with this digest.
+    pub fn tarball_filename(&self) -> String {
+        format!("{}.tar", self.as_hex())
+    }
 }
 
 impl FromStr for Digest {
@@ -356,6 +365,24 @@ impl From<&Digest> for Digest {
     }
 }
 
+impl Serialize for Digest {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.to_string().serialize(serializer)
+    }
+}
+
+impl From<Digest> for String {
+    fn from(digest: Digest) -> Self {
+        digest.to_string()
+    }
+}
+
+impl From<&Digest> for String {
+    fn from(digest: &Digest) -> Self {
+        digest.to_string()
+    }
+}
+
 /// Version identifier for a container image.
 ///
 /// This can be a named tag or a SHA256 digest.
@@ -369,7 +396,8 @@ impl From<&Digest> for Digest {
 /// let digest = Digest::from_str("sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4").expect("parse digest");
 /// assert_eq!(Version::digest(digest).to_string(), "sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Display)]
+#[derive(Debug, Clone, PartialEq, Eq, Display, Serialize)]
+#[serde(rename_all = "snake_case", tag = "kind", content = "value")]
 pub enum Version {
     /// A named tag (e.g. "latest", "1.0.0")
     Tag(String),
@@ -413,7 +441,7 @@ impl Version {
 }
 
 /// A parsed container image reference.
-#[derive(Debug, Clone, PartialEq, Eq, Builder)]
+#[derive(Debug, Clone, PartialEq, Eq, Builder, Serialize)]
 pub struct Reference {
     /// Registry host (e.g. "docker.io", "ghcr.io")
     #[builder(into)]
@@ -426,6 +454,16 @@ pub struct Reference {
     /// Version identifier, either a tag or SHA digest
     #[builder(into, default = Version::latest())]
     pub version: Version,
+}
+
+impl Reference {
+    /// The name of the container without the repository.
+    pub fn name(&self) -> &str {
+        self.repository
+            .split('/')
+            .last()
+            .unwrap_or(&self.repository)
+    }
 }
 
 impl<S: reference_builder::State> ReferenceBuilder<S> {
@@ -545,7 +583,7 @@ impl std::fmt::Display for Reference {
 /// A descriptor for a specific layer within an OCI container image.
 /// This follows the OCI Image Spec's layer descriptor format.
 #[derive(Debug, Clone, PartialEq, Eq, Builder)]
-pub struct LayerDescriptor {
+pub struct Layer {
     /// The content-addressable digest of the layer
     #[builder(into)]
     pub digest: Digest,
@@ -557,15 +595,39 @@ pub struct LayerDescriptor {
     pub media_type: LayerMediaType,
 }
 
-impl From<&LayerDescriptor> for LayerDescriptor {
-    fn from(layer: &LayerDescriptor) -> Self {
+impl Layer {
+    /// Convenience reference to the digest for the layer.
+    pub fn digest(&self) -> &Digest {
+        &self.digest
+    }
+
+    /// Convenience reference to the digest for the layer as a hex string.
+    pub fn digest_hex(&self) -> String {
+        self.digest.as_hex()
+    }
+}
+
+impl From<&Layer> for Layer {
+    fn from(layer: &Layer) -> Self {
         layer.clone()
     }
 }
 
-impl std::fmt::Display for LayerDescriptor {
+impl std::fmt::Display for Layer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.digest)
+    }
+}
+
+impl From<Layer> for Strategy {
+    fn from(layer: Layer) -> Self {
+        Strategy::Separate(layer)
+    }
+}
+
+impl From<&Layer> for Strategy {
+    fn from(layer: &Layer) -> Self {
+        Strategy::Separate(layer.clone())
     }
 }
 

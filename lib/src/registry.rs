@@ -5,6 +5,7 @@ use std::{
     str::FromStr,
 };
 
+use async_tempfile::TempFile;
 use bytes::Bytes;
 use color_eyre::eyre::{Context, OptionExt, Result};
 use derive_more::Debug;
@@ -17,7 +18,7 @@ use oci_client::{
 };
 use os_str_bytes::OsStrBytesExt;
 use tap::Pipe;
-use tokio::io::AsyncRead;
+use tokio::io::{AsyncRead, AsyncWriteExt, BufWriter};
 use tokio_tar::{Archive, Entry};
 use tokio_util::io::StreamReader;
 use tracing::{debug, warn};
@@ -25,7 +26,7 @@ use tracing::{debug, warn};
 use crate::{
     ext::PriorityFind,
     transform::{self, Chunk},
-    Authentication, Digest, Filter, FilterMatch, Filters, LayerDescriptor, LayerMediaType,
+    Authentication, Digest, Filter, FilterMatch, Filters, Layer, LayerMediaType,
     LayerMediaTypeFlag, Platform, Reference, Version,
 };
 
@@ -52,6 +53,9 @@ macro_rules! unwrap_warn {
 pub struct Registry {
     /// The OCI reference, used by the underlying client.
     reference: OciReference,
+
+    /// The original reference used to construct the registry.
+    pub original: Reference,
 
     /// Authentication information for the registry.
     auth: RegistryAuth,
@@ -92,6 +96,7 @@ impl Registry {
         reference: Reference,
     ) -> Result<Self> {
         let client = client(platform.clone());
+        let original = reference.clone();
         let reference = OciReference::from(&reference);
         let auth = auth
             .map(RegistryAuth::from)
@@ -106,6 +111,7 @@ impl Registry {
             auth,
             client,
             reference,
+            original,
             layer_filters: layer_filters.unwrap_or_default(),
             file_filters: file_filters.unwrap_or_default(),
         })
@@ -116,7 +122,7 @@ impl Registry {
     /// Enumerate layers for a container reference in the remote registry.
     /// Layers are returned in order from the base image to the application.
     #[tracing::instrument]
-    pub async fn layers(&self) -> Result<Vec<LayerDescriptor>> {
+    pub async fn layers(&self) -> Result<Vec<Layer>> {
         let (manifest, _) = self
             .client
             .pull_image_manifest(&self.reference, &self.auth)
@@ -126,8 +132,19 @@ impl Registry {
             .layers
             .into_iter()
             .filter(|layer| self.layer_filters.matches(layer))
-            .map(LayerDescriptor::try_from)
+            .map(Layer::try_from)
             .collect()
+    }
+
+    /// Report the digest for the image.
+    #[tracing::instrument]
+    pub async fn digest(&self) -> Result<Digest> {
+        let (_, digest) = self
+            .client
+            .pull_image_manifest(&self.reference, &self.auth)
+            .await
+            .context("pull image manifest")?;
+        Digest::from_str(&digest).context("parse digest")
     }
 
     /// Pull the bytes of a layer from the registry in a stream.
@@ -146,19 +163,13 @@ impl Registry {
     /// - A file is added.
     /// - A file is removed.
     /// - A file is modified.
-    pub async fn pull_layer(
-        &self,
-        layer: &LayerDescriptor,
-    ) -> Result<impl Stream<Item = Result<Bytes>>> {
+    pub async fn pull_layer(&self, layer: &Layer) -> Result<impl Stream<Item = Result<Bytes>>> {
         self.pull_layer_internal(layer)
             .await
             .map(|stream| stream.map(|chunk| chunk.context("read chunk")))
     }
 
-    async fn pull_layer_internal(
-        &self,
-        layer: &LayerDescriptor,
-    ) -> Result<impl Stream<Item = Chunk>> {
+    async fn pull_layer_internal(&self, layer: &Layer) -> Result<impl Stream<Item = Chunk>> {
         let oci_layer = OciDescriptor::from(layer);
         self.client
             .pull_blob_stream(&self.reference, &oci_layer)
@@ -169,7 +180,7 @@ impl Registry {
 
     /// Enumerate files in a layer.
     #[tracing::instrument]
-    pub async fn list_files(&self, layer: &LayerDescriptor) -> Result<Vec<String>> {
+    pub async fn list_files(&self, layer: &Layer) -> Result<Vec<String>> {
         let stream = self.pull_layer_internal(layer).await?;
 
         // Applying the layer requires interpreting the layer's media type.
@@ -257,7 +268,7 @@ impl Registry {
     // then still applying them serially. Since network transfer is the slowest part of this process,
     // this would speed up the overall process.
     #[tracing::instrument]
-    pub async fn apply_layer(&self, layer: &LayerDescriptor, output: &Path) -> Result<()> {
+    pub async fn apply_layer(&self, layer: &Layer, output: &Path) -> Result<()> {
         let stream = self.pull_layer_internal(layer).await?;
 
         // Applying the layer requires interpreting the layer's media type.
@@ -303,6 +314,78 @@ impl Registry {
             }
         }
     }
+
+    /// Normalize an OCI layer into a plain tarball layer.
+    /// This is intended to support FOSSA CLI's needs; see the [`fossacli`] module docs for details.
+    ///
+    /// The intention of this method is that when it is run for each layer in an image in order it is equivalent
+    /// to the functionality you'd get by running `docker pull`, `docker save`, and viewing the patch sets directly.
+    ///
+    /// The twist though is that OCI servers can wrap various kinds of compression around tarballs;
+    /// this method flattens them all down into plain uncompressed `.tar` files.
+    ///
+    /// As such the following edge cases are handled as follows:
+    /// - Standard layers are applied as normal, except that they are re-encoded to plain uncompressed tarballs.
+    /// - Foreign layers are treated as no-ops, as they would if you ran `docker pull`.
+    ///   These are emitted as `None`.
+    /// - File path filters are ignored.
+    ///   this is a consequence of the fact that we don't actually unpack and read the tarball.
+    ///   For the purposes of FOSSA CLI interop this is fine as the `reexport` subcommand doesn't even support filters,
+    ///   but if we ever want to make this work for more than just that we'll need to re-evaluate.
+    #[tracing::instrument]
+    pub async fn layer_plain_tarball(&self, layer: &Layer) -> Result<Option<TempFile>> {
+        let stream = self.pull_layer_internal(layer).await?;
+
+        // Applying the layer requires interpreting the layer's media type.
+        match &layer.media_type {
+            // Standard OCI layers.
+            LayerMediaType::Oci(flags) => {
+                // Foreign layers are skipped, as they would if you ran `docker pull`.
+                // This causes an extra iteration over the flags for layers that aren't foreign,
+                // but the flag count is small and this saves us the complexity of setting up layer transforms
+                // and then discarding them if this flag is encountered.
+                if flags.contains(&LayerMediaTypeFlag::Foreign) {
+                    warn!("skip: foreign layer");
+                    return Ok(None);
+                }
+
+                // The vast majority of the time (maybe even all the time), the layer only has zero or one flags.
+                // Meanwhile, `transform::sequence` forces the streams into dynamic dispatch, imposing extra overhead.
+                // This match allows us to specialize the stream based on the most common cases,
+                // while still supporting arbitrary flags.
+                Ok(Some(match flags.as_slice() {
+                    // No flags; this means the layer is already uncompressed.
+                    [] => collect_tmp(stream).await?,
+
+                    // The layer is compressed with zstd.
+                    [LayerMediaTypeFlag::Zstd] => transform::zstd(stream).pipe(collect_tmp).await?,
+
+                    // The layer is compressed with gzip.
+                    [LayerMediaTypeFlag::Gzip] => transform::gzip(stream).pipe(collect_tmp).await?,
+
+                    // The layer has a more complicated set of flags.
+                    // For this, we fall back to the generic sequence operator.
+                    _ => transform::sequence(stream, flags).pipe(collect_tmp).await?,
+                }))
+            }
+        }
+    }
+}
+
+/// Sink the stream into a temporary file.
+async fn collect_tmp(mut stream: impl Stream<Item = Chunk> + Unpin) -> Result<TempFile> {
+    let file = TempFile::new().await.context("create temp file")?;
+    let mut writer = BufWriter::new(file);
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.context("read chunk")?;
+        writer.write_all(&chunk).await.context("write chunk")?;
+    }
+    writer.flush().await.context("flush writer")?;
+
+    let file = writer.into_inner();
+    file.sync_all().await.context("sync file")?;
+    Ok(file)
 }
 
 /// Apply files in the tarball to a location on disk.
@@ -525,8 +608,8 @@ impl From<&Reference> for OciReference {
     }
 }
 
-impl From<LayerDescriptor> for OciDescriptor {
-    fn from(layer: LayerDescriptor) -> Self {
+impl From<Layer> for OciDescriptor {
+    fn from(layer: Layer) -> Self {
         Self {
             digest: layer.digest.to_string(),
             media_type: layer.media_type.to_string(),
@@ -536,13 +619,13 @@ impl From<LayerDescriptor> for OciDescriptor {
     }
 }
 
-impl From<&LayerDescriptor> for OciDescriptor {
-    fn from(layer: &LayerDescriptor) -> Self {
+impl From<&Layer> for OciDescriptor {
+    fn from(layer: &Layer) -> Self {
         layer.clone().into()
     }
 }
 
-impl TryFrom<OciDescriptor> for LayerDescriptor {
+impl TryFrom<OciDescriptor> for Layer {
     type Error = color_eyre::Report;
 
     fn try_from(value: OciDescriptor) -> Result<Self, Self::Error> {
@@ -563,8 +646,8 @@ impl From<Authentication> for RegistryAuth {
     }
 }
 
-impl FilterMatch<&LayerDescriptor> for Filter {
-    fn matches(&self, value: &LayerDescriptor) -> bool {
+impl FilterMatch<&Layer> for Filter {
+    fn matches(&self, value: &Layer) -> bool {
         self.matches(&value.digest.to_string())
     }
 }
