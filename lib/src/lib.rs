@@ -18,6 +18,7 @@ use tracing::{debug, warn};
 mod docker;
 mod ext;
 pub mod extract;
+pub mod fossacli;
 pub mod registry;
 pub mod transform;
 
@@ -321,6 +322,11 @@ impl Digest {
     pub fn as_hex(&self) -> String {
         hex::encode(&self.hash)
     }
+
+    /// Returns the filename to use for a tarball with this digest.
+    pub fn tarball_filename(&self) -> String {
+        format!("{}.tar", self.as_hex())
+    }
 }
 
 impl FromStr for Digest {
@@ -587,6 +593,18 @@ pub struct Layer {
 
     /// The media type of the layer
     pub media_type: LayerMediaType,
+}
+
+impl Layer {
+    /// Convenience reference to the digest for the layer.
+    pub fn digest(&self) -> &Digest {
+        &self.digest
+    }
+
+    /// Convenience reference to the digest for the layer as a hex string.
+    pub fn digest_hex(&self) -> String {
+        self.digest.as_hex()
+    }
 }
 
 impl From<&Layer> for Layer {
