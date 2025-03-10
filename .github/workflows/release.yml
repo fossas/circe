@@ -141,11 +141,12 @@ jobs:
 
   release:
     name: push
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: [build, create-checksums]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-tags: true
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -175,7 +176,33 @@ jobs:
           cat version_changelog.txt >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: create (dry run)
+        if: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) }}
+        run: |
+            cat <<EOF
+            ## Changes in ${{ steps.get_version.outputs.VERSION }}
+
+            ${{ steps.changelog.outputs.CHANGELOG }}
+
+            ## Installation
+
+            Download the appropriate binary for your system and architecture:
+
+            | Platform | Architecture | Download |
+            | -------- | ------------ | -------- |
+            | macOS    | x86_64       | [circe-x86_64-apple-darwin.tar.gz](https://github.com/fossas/circe/releases/download/${{ steps.get_version.outputs.VERSION }}/circe-x86_64-apple-darwin.tar.gz) |
+            | macOS    | arm64        | [circe-aarch64-apple-darwin.tar.gz](https://github.com/fossas/circe/releases/download/${{ steps.get_version.outputs.VERSION }}/circe-aarch64-apple-darwin.tar.gz) |
+            | Linux    | x86_64       | [circe-x86_64-unknown-linux-gnu.tar.gz](https://github.com/fossas/circe/releases/download/${{ steps.get_version.outputs.VERSION }}/circe-x86_64-unknown-linux-gnu.tar.gz) |
+            | Linux    | arm64        | [circe-aarch64-unknown-linux-gnu.tar.gz](https://github.com/fossas/circe/releases/download/${{ steps.get_version.outputs.VERSION }}/circe-aarch64-unknown-linux-gnu.tar.gz) |
+            | Linux    | x86_64 (musl) | [circe-x86_64-unknown-linux-musl.tar.gz](https://github.com/fossas/circe/releases/download/${{ steps.get_version.outputs.VERSION }}/circe-x86_64-unknown-linux-musl.tar.gz) |
+            | Linux    | arm64 (musl) | [circe-aarch64-unknown-linux-musl.tar.gz](https://github.com/fossas/circe/releases/download/${{ steps.get_version.outputs.VERSION }}/circe-aarch64-unknown-linux-musl.tar.gz) |
+            | Windows  | x86_64       | [circe-x86_64-pc-windows-msvc.zip](https://github.com/fossas/circe/releases/download/${{ steps.get_version.outputs.VERSION }}/circe-x86_64-pc-windows-msvc.zip) |
+
+            See [checksums.txt](https://github.com/fossas/circe/releases/download/${{ steps.get_version.outputs.VERSION }}/checksums.txt) for file checksums.
+            EOF
+
       - name: create
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v1
         with:
           files: |
