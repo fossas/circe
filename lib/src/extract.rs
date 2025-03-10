@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::{registry::Registry, Digest, Layer, Reference};
+use crate::{Digest, Layer, Reference, Source};
 use bon::Builder;
 use color_eyre::{
     eyre::{bail, Context, Error},
@@ -77,8 +77,8 @@ impl IntoIterator for Strategy {
 
 /// Extract container layers according to the specified strategies.
 pub async fn extract(
-    registry: &Registry,
-    output: &PathBuf,
+    registry: &impl Source,
+    output: &Path,
     strategies: impl IntoIterator<Item = Strategy>,
 ) -> Result<Report> {
     let digest = registry.digest().await.context("fetch digest")?;
@@ -97,8 +97,8 @@ pub async fn extract(
         .pipe(|layers| layers.into_iter().flatten().collect::<Vec<_>>());
 
     Report::builder()
-        .name(registry.original.name().to_string())
-        .reference(registry.original.clone())
+        .name(registry.original().name().to_string())
+        .reference(registry.original().clone())
         .digest(digest.to_string())
         .layers(layers)
         .build()
@@ -106,8 +106,8 @@ pub async fn extract(
 }
 
 async fn squash(
-    registry: &Registry,
-    output: &PathBuf,
+    registry: &impl Source,
+    output: &Path,
     layers: &[Layer],
 ) -> Result<Vec<(Digest, PathBuf)>> {
     let target = target_dir(output, layers).context("target dir")?;
@@ -124,8 +124,8 @@ async fn squash(
 }
 
 async fn copy(
-    registry: &Registry,
-    output: &PathBuf,
+    registry: &impl Source,
+    output: &Path,
     layer: Layer,
 ) -> Result<Vec<(Digest, PathBuf)>> {
     let target = target_dir(output, [&layer]).context("target dir")?;

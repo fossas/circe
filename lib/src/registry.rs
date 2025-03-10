@@ -27,7 +27,7 @@ use crate::{
     ext::PriorityFind,
     transform::{self, Chunk},
     Authentication, Digest, Filter, FilterMatch, Filters, Layer, LayerMediaType,
-    LayerMediaTypeFlag, Platform, Reference, Version,
+    LayerMediaTypeFlag, Platform, Reference, Source, Version,
 };
 
 /// Unwrap a value, logging an error and performing the provided action if it fails.
@@ -369,6 +369,36 @@ impl Registry {
                 }))
             }
         }
+    }
+}
+
+impl Source for Registry {
+    fn original(&self) -> &Reference {
+        &self.original
+    }
+
+    async fn layers(&self) -> Result<Vec<Layer>> {
+        self.layers().await
+    }
+
+    async fn digest(&self) -> Result<Digest> {
+        self.digest().await
+    }
+
+    async fn pull_layer(&self, layer: &Layer) -> Result<impl Stream<Item = Result<Bytes>>> {
+        self.pull_layer(layer).await
+    }
+
+    async fn list_files(&self, layer: &Layer) -> Result<Vec<String>> {
+        self.list_files(layer).await
+    }
+
+    async fn apply_layer(&self, layer: &Layer, output: &Path) -> Result<()> {
+        self.apply_layer(layer, output).await
+    }
+
+    async fn layer_plain_tarball(&self, layer: &Layer) -> Result<Option<TempFile>> {
+        self.layer_plain_tarball(layer).await
     }
 }
 

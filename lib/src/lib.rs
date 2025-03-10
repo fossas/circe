@@ -1,6 +1,8 @@
 //! Core library for `circe`, a tool for extracting OCI images.
 
+use async_tempfile::TempFile;
 use bon::Builder;
+use bytes::Bytes;
 use color_eyre::{
     eyre::{self, bail, ensure, eyre, Context},
     Result, Section, SectionExt,
@@ -8,9 +10,16 @@ use color_eyre::{
 use derive_more::derive::{Debug, Display, From};
 use enum_assoc::Assoc;
 use extract::Strategy;
+use futures_lite::Stream;
 use itertools::Itertools;
 use serde::{Serialize, Serializer};
-use std::{borrow::Cow, ops::Add, path::PathBuf, str::FromStr};
+use std::{
+    borrow::Cow,
+    future::Future,
+    ops::Add,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 use tap::{Pipe, Tap};
 use tracing::{debug, warn};
@@ -21,6 +30,49 @@ pub mod extract;
 pub mod fossacli;
 pub mod registry;
 pub mod transform;
+
+/// A trait that abstracts interaction with container images.
+///
+/// This trait provides methods to interact with container images,
+/// whether they're stored in a remote registry or available locally.
+/// Implementations of this trait can be used interchangeably to
+/// work with container images from different sources.
+pub trait Source {
+    /// The reference that was originally requested to create this source.
+    fn original(&self) -> &Reference;
+
+    /// Enumerate layers for a container image.
+    /// Layers are returned in order from the base image to the application.
+    fn layers(&self) -> impl Future<Output = Result<Vec<Layer>>>;
+
+    /// Report the digest for the image.
+    fn digest(&self) -> impl Future<Output = Result<Digest>>;
+
+    /// Pull the bytes of a layer from the source in a stream.
+    fn pull_layer(
+        &self,
+        layer: &Layer,
+    ) -> impl Future<Output = Result<impl Stream<Item = Result<Bytes>>>>;
+
+    /// Enumerate files in a layer.
+    fn list_files(&self, layer: &Layer) -> impl Future<Output = Result<Vec<String>>>;
+
+    /// Apply a layer to a location on disk.
+    ///
+    /// The intention of this method is that when it is run for each layer in an image in order it is equivalent
+    /// to the functionality you'd get by running `docker pull`, `docker save`, and then recursively extracting the
+    /// layers to the same directory.
+    fn apply_layer(&self, layer: &Layer, output: &Path) -> impl Future<Output = Result<()>>;
+
+    /// Normalize an OCI layer into a plain tarball layer.
+    ///
+    /// The intention of this method is that when it is run for each layer in an image in order it is equivalent
+    /// to the functionality you'd get by running `docker pull`, `docker save`, and viewing the patch sets directly.
+    ///
+    /// The twist though is that OCI servers can wrap various kinds of compression around tarballs;
+    /// this method flattens them all down into plain uncompressed `.tar` files.
+    fn layer_plain_tarball(&self, layer: &Layer) -> impl Future<Output = Result<Option<TempFile>>>;
+}
 
 /// Users can set this environment variable to specify the OCI base.
 /// If not set, the default is [`OCI_DEFAULT_BASE`].
