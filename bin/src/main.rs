@@ -1,3 +1,8 @@
+#![deny(clippy::uninlined_format_args)]
+#![deny(clippy::unwrap_used)]
+#![deny(unsafe_code)]
+#![warn(rust_2018_idioms)]
+
 use clap::{
     builder::{styling::AnsiColor, Styles},
     Parser,

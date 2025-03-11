@@ -43,11 +43,11 @@ pub struct Registry {
     auth: RegistryAuth,
 
     /// Layer filters.
-    /// Layers that match any filter are included in the set of layers processed by this registry.
+    /// Layers that match any filter are excluded from the set of layers processed by this registry.
     layer_filters: Filters,
 
     /// File filters.
-    /// Files that match any filter are included in the set of files processed by this registry.
+    /// Files that match any filter are excluded from the set of files processed by this registry.
     file_filters: Filters,
 
     /// The client used to interact with the registry.
@@ -67,11 +67,11 @@ impl Registry {
         platform: Option<Platform>,
 
         /// Filters for layers.
-        /// Layers that match any filter are included in the set of layers processed by this registry.
+        /// Layers that match any filter are excluded from the set of layers processed by this registry.
         layer_filters: Option<Filters>,
 
         /// Filters for files.
-        /// Files that match any filter are included in the set of files processed by this registry.
+        /// Files that match any filter are excluded from the set of files processed by this registry.
         file_filters: Option<Filters>,
 
         /// The reference to use for the registry.

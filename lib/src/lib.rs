@@ -1,4 +1,7 @@
-//! Core library for `circe`, a tool for extracting OCI images.
+#![deny(clippy::uninlined_format_args)]
+#![deny(clippy::unwrap_used)]
+#![deny(unsafe_code)]
+#![warn(rust_2018_idioms)]
 
 use async_tempfile::TempFile;
 use bon::Builder;
@@ -638,8 +641,8 @@ impl std::fmt::Display for Reference {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}/{}/{}", self.host, self.namespace, self.name)?;
         match &self.version {
-            Version::Tag(tag) => write!(f, ":{}", tag),
-            Version::Digest(digest) => write!(f, "@{}", digest),
+            Version::Tag(tag) => write!(f, ":{tag}"),
+            Version::Digest(digest) => write!(f, "@{digest}"),
         }
     }
 }
