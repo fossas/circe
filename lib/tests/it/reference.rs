@@ -67,9 +67,9 @@ fn docker_like_custom_base_namespace(input: &str, expected: &str) {
     const REQUIRED_BASE: &str = "host.dev";
     const REQUIRED_NAMESPACE: &str = "somecorp/someproject";
     let base = std::env::var(circe_lib::OCI_BASE_VAR)
-        .expect(format!("'{}' must be set", circe_lib::OCI_BASE_VAR).as_str());
+        .unwrap_or_else(|_| panic!("'{}' must be set", circe_lib::OCI_BASE_VAR));
     let ns = std::env::var(circe_lib::OCI_NAMESPACE_VAR)
-        .expect(format!("'{}' must be set", circe_lib::OCI_NAMESPACE_VAR).as_str());
+        .unwrap_or_else(|_| panic!("'{}' must be set", circe_lib::OCI_NAMESPACE_VAR));
     pretty_assertions::assert_eq!(
         base,
         REQUIRED_BASE,

@@ -462,12 +462,13 @@ impl FilterMatch<&PathBuf> for Filter {
 }
 
 fn client(platform: Option<Platform>) -> Client {
-    let mut config = ClientConfig::default();
-    config.platform_resolver = match platform {
-        Some(platform) => Some(Box::new(target_platform_resolver(platform))),
-        None => Some(Box::new(current_platform_resolver)),
-    };
-    Client::new(config)
+    Client::new(ClientConfig {
+        platform_resolver: match platform {
+            Some(platform) => Some(Box::new(target_platform_resolver(platform))),
+            None => Some(Box::new(current_platform_resolver)),
+        },
+        ..Default::default()
+    })
 }
 
 fn target_platform_resolver(target: Platform) -> impl Fn(&[ImageIndexEntry]) -> Option<String> {
@@ -475,7 +476,7 @@ fn target_platform_resolver(target: Platform) -> impl Fn(&[ImageIndexEntry]) -> 
         entries
             .iter()
             .find(|entry| {
-                entry.platform.as_ref().map_or(false, |platform| {
+                entry.platform.as_ref().is_some_and(|platform| {
                     platform.os == target.os && platform.architecture == target.architecture
                 })
             })

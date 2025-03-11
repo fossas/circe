@@ -234,11 +234,7 @@ pub fn compute_symlink_target(src: &Path, dst: &Path) -> Result<PathBuf> {
 pub fn strip_root(path: impl AsRef<Path>) -> PathBuf {
     path.as_ref()
         .components()
-        .filter(|c| match c {
-            std::path::Component::Prefix(_) => false,
-            std::path::Component::RootDir => false,
-            _ => true,
-        })
+        .filter(|c| !matches!(c, std::path::Component::Prefix(_) | std::path::Component::RootDir))
         .pipe(PathBuf::from_iter)
 }
 

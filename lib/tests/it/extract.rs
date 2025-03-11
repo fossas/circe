@@ -110,7 +110,7 @@ async fn report(image: &str) -> Result<()> {
 
     // Hard coded so that tests will notice if we accidentally change this path
     let path = tmp.dir_path().join("image.json");
-    report.write(&tmp.dir_path()).await?;
+    report.write(tmp.dir_path()).await?;
 
     let report_text = tokio::fs::read_to_string(&path).await?;
     pretty_assertions::assert_eq!(report_text, report.render()?);
