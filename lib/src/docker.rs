@@ -1,14 +1,38 @@
-use std::{collections::HashMap, process::Stdio};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    pin::Pin,
+    process::Stdio,
+    str::FromStr,
+};
 
-use crate::{homedir, Authentication, Reference};
+use crate::{
+    cfs::{self, apply_tarball, collect_tmp, enumerate_tarball},
+    ext::PriorityFind,
+    homedir,
+    transform::{self, Chunk},
+    Authentication, Digest, Filter, FilterMatch, Filters, Layer, LayerMediaType,
+    LayerMediaTypeFlag, Reference, Source, Version,
+};
+use async_tempfile::TempFile;
 use base64::Engine;
+use bollard::image::RemoveImageOptions;
+use bollard::models::ImageInspect as BollardImageInspect;
+use bollard::service::ImageInspect;
+use bollard::Docker;
+use bollard::{container::RemoveContainerOptions, secret::ImageSummary};
+use bytes::Bytes;
 use color_eyre::{
-    eyre::{eyre, Context, OptionExt, Result},
+    eyre::{bail, ensure, eyre, Context, OptionExt, Result},
     Section, SectionExt,
 };
+use derive_more::Debug;
+use futures_lite::{Stream, StreamExt};
 use serde::Deserialize;
-use tap::TapFallible;
-use tokio::io::AsyncWriteExt;
+use tap::{Pipe, TapFallible};
+use tokio::io::{AsyncRead, AsyncWriteExt, BufWriter};
+use tokio_tar::{Archive, Entry};
+use tokio_util::io::StreamReader;
 use tracing::{debug, info, warn};
 
 impl Authentication {
@@ -191,4 +215,198 @@ impl DockerAuth {
 struct DockerCredential {
     username: String,
     secret: String,
+}
+
+/// Each instance is a unique view of a local Docker daemon for a specific [`Reference`].
+/// Similar to [`crate::registry::Registry`], but interacts with a local Docker daemon.
+#[derive(Debug)]
+pub struct Daemon {
+    /// The client used to interact with the docker daemon.
+    #[debug(skip)]
+    docker: Docker,
+
+    /// The image ID in the daemon being referenced.
+    image: String,
+
+    /// The file on disk representing the exported container.
+    exported: TempFile,
+
+    /// Layer filters.
+    /// Layers that match any filter are included in the set of layers processed by this daemon.
+    layer_filters: Filters,
+
+    /// File filters.
+    /// Files that match any filter are included in the set of files processed by this daemon.
+    file_filters: Filters,
+}
+
+#[bon::bon]
+impl Daemon {
+    /// Create a new daemon for a specific reference.
+    #[builder]
+    pub async fn new(
+        /// Filters for layers.
+        /// Layers that match any filter are included in the set of layers processed by this daemon.
+        #[builder(into)]
+        layer_filters: Option<Filters>,
+
+        /// Filters for files.
+        /// Files that match any filter are included in the set of files processed by this daemon.
+        #[builder(into)]
+        file_filters: Option<Filters>,
+
+        /// The reference for the image the user provided.
+        #[builder(into)]
+        reference: String,
+    ) -> Result<Self> {
+        let docker = Docker::connect_with_local_defaults().context("connect to docker daemon")?;
+        let image = find_image(&docker, &reference)
+            .await
+            .context("find image")?;
+
+        let stream = docker.export_image(&image);
+        let exported = cfs::collect_tmp(stream)
+            .await
+            .context("collect exported image")?;
+
+        Ok(Self {
+            docker,
+            image,
+            exported,
+            layer_filters: layer_filters.unwrap_or_default(),
+            file_filters: file_filters.unwrap_or_default(),
+        })
+    }
+}
+
+impl Daemon {
+    /// Report the digest for the image.
+    #[tracing::instrument]
+    pub async fn digest(&self) -> Result<Digest> {
+        Digest::from_sha256(&self.image).context("parse image ID as sha256")
+    }
+
+    /// Enumerate layers for a container image from the local Docker daemon.
+    /// Layers are returned in order from the base image to the application.
+    #[tracing::instrument]
+    pub async fn layers(&self) -> Result<Vec<Layer>> {
+        todo!()
+    }
+
+    /// Pull the bytes of a layer from the daemon in a stream.
+    #[tracing::instrument]
+    pub async fn pull_layer(
+        &self,
+        layer: &Layer,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes>> + Send>>> {
+        todo!()
+    }
+
+    /// Enumerate files in a layer.
+    #[tracing::instrument]
+    pub async fn list_files(&self, layer: &Layer) -> Result<Vec<String>> {
+        todo!()
+    }
+
+    /// Apply a layer to a location on disk.
+    ///
+    /// The intention of this method is that when it is run for each layer in an image in order it is equivalent
+    /// to the functionality you'd get by running `docker pull`, `docker save`, and then recursively extracting the
+    /// layers to the same directory.
+    #[tracing::instrument]
+    pub async fn apply_layer(&self, layer: &Layer, output: &Path) -> Result<()> {
+        todo!()
+    }
+
+    /// Normalize an OCI layer into a plain tarball layer.
+    #[tracing::instrument]
+    pub async fn layer_plain_tarball(&self, layer: &Layer) -> Result<Option<TempFile>> {
+        todo!()
+    }
+}
+
+impl Source for Daemon {
+    async fn digest(&self) -> Result<Digest> {
+        self.digest().await
+    }
+
+    async fn name(&self) -> Result<String> {
+        Ok(self.image.clone())
+    }
+
+    async fn layers(&self) -> Result<Vec<Layer>> {
+        self.layers().await
+    }
+
+    async fn pull_layer(
+        &self,
+        layer: &Layer,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes>> + Send>>> {
+        self.pull_layer(layer).await
+    }
+
+    async fn list_files(&self, layer: &Layer) -> Result<Vec<String>> {
+        self.list_files(layer).await
+    }
+
+    async fn apply_layer(&self, layer: &Layer, output: &Path) -> Result<()> {
+        self.apply_layer(layer, output).await
+    }
+
+    async fn layer_plain_tarball(&self, layer: &Layer) -> Result<Option<TempFile>> {
+        self.layer_plain_tarball(layer).await
+    }
+}
+
+/// Find the ID of the image for the specified reference in the Docker daemon, if it exists.
+/// If it doesn't exist, this function returns an error.
+async fn find_image(docker: &Docker, reference: &str) -> Result<String> {
+    let opts = bollard::image::ListImagesOptions::<String> {
+        all: true,
+        ..Default::default()
+    };
+
+    let images = docker
+        .list_images(Some(opts))
+        .await
+        .context("list images")?;
+
+    // Images in the docker daemon don't use the fully qualified reference,
+    // they look like this:
+    // ```
+    // repo_tags: [
+    //     "changeset_example:latest",
+    // ],
+    // repo_digests: [
+    //     "changeset_example@sha256:1af7aa8d7fe18420f10b46a78c23c5c9cb01817d30a03a12c33e8a26555f7b4f",
+    // ],
+    // repo_tags: [
+    //     "fossaeng/changeset_example:latest",
+    // ],
+    // repo_digests: [
+    //     "fossaeng/changeset_example@sha256:495f92a2c50d0b1550b232213c19bd4b5121a2268f95f0b7be6bb1c7dd51c4ce",
+    // ],
+    // ```
+    // As such, we just use the string the user provided;
+    // if it matches any tag or digest it's good to go.
+
+    // Collect the images
+    let id_by_tag_or_digest = images
+        .iter()
+        .flat_map(|i| {
+            i.repo_tags
+                .iter()
+                .map(|t| t.as_str())
+                .chain(i.repo_digests.iter().map(|d| d.as_str()))
+                .zip(std::iter::repeat(i.id.as_str()))
+        })
+        .collect::<HashMap<_, _>>();
+
+    if let Some(image) = id_by_tag_or_digest.get(reference) {
+        return Ok(image.to_string());
+    }
+
+    let listings = id_by_tag_or_digest.keys().collect::<Vec<_>>();
+    Err(eyre!("image not found: {reference}"))
+        .with_note(|| format!("{listings:#?}").header("Images:"))
 }

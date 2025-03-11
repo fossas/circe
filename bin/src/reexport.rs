@@ -74,7 +74,7 @@ pub async fn main(opts: Options) -> Result<()> {
     // - https://github.com/fossas/fossa-cli/blob/65046d8b1935a2693e6f30869afbc2efb868352e/src/Container/Tarball.hs#L74
 
     let digest = registry.digest().await.context("get image digest")?;
-    let tag = format!("{}:{}", reference.name(), reference.version);
+    let tag = format!("{}:{}", reference.name, reference.version);
 
     // It's a lot less error prone to use the disk as working state for the tarball we create:
     // the `tokio-tar` library automatically creates a lot of metadata for us if it can use an on-disk artifact

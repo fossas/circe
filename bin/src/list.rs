@@ -1,4 +1,4 @@
-use circe_lib::{registry::Registry, Authentication, Reference};
+use circe_lib::{docker::Daemon, registry::Registry, Authentication, Reference, Source};
 use clap::Parser;
 use color_eyre::eyre::{Context, Result};
 use derive_more::Debug;
@@ -19,6 +19,13 @@ pub struct Options {
 pub async fn main(opts: Options) -> Result<()> {
     info!("extracting image");
 
+    let daemon = Daemon::builder().reference(&opts.target.image);
+    if let Ok(daemon) = daemon.build().await {
+        let listing = list_files(daemon).await.context("list files")?;
+        let rendered = serde_json::to_string_pretty(&listing).context("render listing")?;
+        println!("{rendered}");
+    }
+
     let reference = Reference::from_str(&opts.target.image)?;
     let auth = match (opts.target.username, opts.target.password) {
         (Some(username), Some(password)) => Authentication::basic(username, password),
@@ -33,6 +40,14 @@ pub async fn main(opts: Options) -> Result<()> {
         .await
         .context("configure remote registry")?;
 
+    let listing = list_files(registry).await.context("list files")?;
+    let rendered = serde_json::to_string_pretty(&listing).context("render listing")?;
+    println!("{rendered}");
+
+    Ok(())
+}
+
+async fn list_files(registry: impl Source) -> Result<HashMap<String, Vec<String>>> {
     let layers = registry.layers().await.context("list layers")?;
     let count = layers.len();
     info!("enumerated {}", pluralize("layer", count as isize, true));
@@ -49,8 +64,5 @@ pub async fn main(opts: Options) -> Result<()> {
         listing.insert(descriptor.digest.to_string(), files);
     }
 
-    let rendered = serde_json::to_string_pretty(&listing).context("render listing")?;
-    println!("{rendered}");
-
-    Ok(())
+    Ok(listing)
 }

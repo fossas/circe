@@ -2,19 +2,19 @@ use circe_lib::{Digest, Reference};
 use proptest::prelude::*;
 use simple_test_case::test_case;
 
-#[test_case("docker.io/library/ubuntu:latest", Reference::builder().host("docker.io").repository("library/ubuntu").tag("latest").build(); "docker.io/library/ubuntu:latest")]
-#[test_case("ghcr.io/user/repo@sha256:123abc", Reference::builder().host("ghcr.io").repository("user/repo").digest(circe_lib::digest!("sha256", "123abc", 3)).build(); "ghcr.io/user/repo@sha256:123abc")]
-#[test_case("docker.io/library/ubuntu", Reference::builder().host("docker.io").repository("library/ubuntu").build(); "docker.io/library/ubuntu")]
+#[test_case("docker.io/library/ubuntu:latest", Reference::builder().host("docker.io").namespace("library").name("ubuntu").tag("latest").build(); "docker.io/library/ubuntu:latest")]
+#[test_case("ghcr.io/user/repo@sha256:123abc", Reference::builder().host("ghcr.io").namespace("user").name("repo").digest(circe_lib::digest!("sha256", "123abc", 3)).build(); "ghcr.io/user/repo@sha256:123abc")]
+#[test_case("docker.io/library/ubuntu", Reference::builder().host("docker.io").namespace("library").name("ubuntu").build(); "docker.io/library/ubuntu")]
 #[test]
 fn parse(input: &str, expected: Reference) {
     let reference = input.parse::<Reference>().unwrap();
     pretty_assertions::assert_eq!(reference, expected);
 }
 
-#[test_case(Reference::builder().host("docker.io").repository("library/ubuntu").tag("latest").build(), "docker.io/library/ubuntu:latest"; "docker.io/library/ubuntu:latest")]
-#[test_case(Reference::builder().host("ghcr.io").repository("user/repo").digest(circe_lib::digest!("sha256", "123abc", 3)).build(), "ghcr.io/user/repo@sha256:123abc"; "ghcr.io/user/repo@sha256:123abc")]
-#[test_case(Reference::builder().host("ghcr.io").repository("fossas/project/app").tag("sha-e01ce6b").build(), "ghcr.io/fossas/project/app:sha-e01ce6b"; "ghcr.io/fossas/project/app:sha-e01ce6b")]
-#[test_case(Reference::builder().host("docker.io").repository("library/ubuntu").build(), "docker.io/library/ubuntu:latest"; "docker.io/library/ubuntu")]
+#[test_case(Reference::builder().host("docker.io").namespace("library").name("ubuntu").tag("latest").build(), "docker.io/library/ubuntu:latest"; "docker.io/library/ubuntu:latest")]
+#[test_case(Reference::builder().host("ghcr.io").namespace("user").name("repo").digest(circe_lib::digest!("sha256", "123abc", 3)).build(), "ghcr.io/user/repo@sha256:123abc"; "ghcr.io/user/repo@sha256:123abc")]
+#[test_case(Reference::builder().host("ghcr.io").namespace("fossas").name("project/app").tag("sha-e01ce6b").build(), "ghcr.io/fossas/project/app:sha-e01ce6b"; "ghcr.io/fossas/project/app:sha-e01ce6b")]
+#[test_case(Reference::builder().host("docker.io").namespace("library").name("ubuntu").build(), "docker.io/library/ubuntu:latest"; "docker.io/library/ubuntu")]
 #[test]
 fn display(reference: Reference, expected: &str) {
     pretty_assertions::assert_eq!(reference.to_string(), expected);
@@ -106,10 +106,23 @@ fn host_strategy() -> impl Strategy<Value = String> {
         .prop_filter("Valid hostname required", |s| !s.contains(".."))
 }
 
-// Strategy to generate valid repository names
+// Strategy to generate valid namespaces
+fn namespace_strategy() -> impl Strategy<Value = String> {
+    // Generate repository namespaces like library, user
+    "[a-z][a-z0-9-]*"
+}
+
+// Strategy to generate valid names
+fn name_strategy() -> impl Strategy<Value = String> {
+    // Generate repository names like ubuntu, project
+    "[a-z][a-z0-9-]*"
+}
+
+// Strategy to generate valid repositories
 fn repository_strategy() -> impl Strategy<Value = String> {
     // Generate repository paths like library/ubuntu, user/project
-    "[a-z][a-z0-9-]*/[a-z][a-z0-9-]*"
+    (namespace_strategy(), name_strategy())
+        .prop_map(|(namespace, name)| format!("{namespace}/{name}"))
 }
 
 // Strategy to generate valid tags
@@ -128,7 +141,8 @@ fn digest_strategy() -> impl Strategy<Value = String> {
 fn reference_strategy() -> impl Strategy<Value = Reference> {
     (
         host_strategy(),
-        repository_strategy(),
+        namespace_strategy(),
+        name_strategy(),
         prop_oneof![
             tag_strategy().prop_map(circe_lib::Version::Tag),
             digest_strategy().prop_map(|digest| {
@@ -136,9 +150,10 @@ fn reference_strategy() -> impl Strategy<Value = Reference> {
             })
         ],
     )
-        .prop_map(|(host, repository, version)| Reference {
+        .prop_map(|(host, namespace, name, version)| Reference {
             host,
-            repository,
+            namespace,
+            name,
             version,
         })
 }

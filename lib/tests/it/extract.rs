@@ -87,14 +87,21 @@ async fn report(image: &str) -> Result<()> {
     let layers = registry.layers().await?;
     assert!(!layers.is_empty(), "image should have at least one layer");
 
-    let report = extract(
+    let extracted = extract(
         &registry,
         tmp.dir_path(),
         layers.iter().cloned().map(Strategy::Separate),
     )
     .await?;
 
-    pretty_assertions::assert_eq!(report.name, registry.original.name());
+    let report = Report::builder()
+        .name(&registry.original.name)
+        .reference(&registry.original)
+        .digest(registry.digest().await?)
+        .layers(extracted)
+        .build();
+
+    pretty_assertions::assert_eq!(report.name, registry.original.name);
     pretty_assertions::assert_eq!(report.reference, registry.original);
 
     let actual_digest = registry.digest().await?;
@@ -126,7 +133,13 @@ async fn squash(image: &str) -> Result<()> {
     let layers = registry.layers().await?;
     assert!(!layers.is_empty(), "image should have at least one layer");
 
-    let report = extract(&registry, tmp.dir_path(), Strategy::Squash(layers)).await?;
+    let extracted = extract(&registry, tmp.dir_path(), Strategy::Squash(layers)).await?;
+    let report = Report::builder()
+        .name(&registry.original.name)
+        .reference(&registry.original)
+        .digest(registry.digest().await?)
+        .layers(extracted)
+        .build();
 
     // We don't really know what the contents of the images will be over time,
     // so we just check that the layers are as we expect for this test.
@@ -154,7 +167,13 @@ async fn base(image: &str) -> Result<()> {
         .first()
         .cloned()
         .expect("image should have at least one layer");
-    let report = extract(&registry, tmp.dir_path(), Strategy::Separate(base.clone())).await?;
+    let extracted = extract(&registry, tmp.dir_path(), Strategy::Separate(base.clone())).await?;
+    let report = Report::builder()
+        .name(&registry.original.name)
+        .reference(&registry.original)
+        .digest(registry.digest().await?)
+        .layers(extracted)
+        .build();
 
     // We don't really know what the contents of the images will be over time,
     // so we just check that the layers are as we expect for this test.
@@ -178,12 +197,18 @@ async fn squash_other(image: &str) -> Result<()> {
     let tmp = TempDir::new().await?;
     let layers = registry.layers().await?;
 
-    let report = extract(
+    let extracted = extract(
         &registry,
         tmp.dir_path(),
         Strategy::Squash(layers.into_iter().skip(1).collect()),
     )
     .await?;
+    let report = Report::builder()
+        .name(&registry.original.name)
+        .reference(&registry.original)
+        .digest(registry.digest().await?)
+        .layers(extracted)
+        .build();
 
     // We don't really know what the contents of the images will be over time,
     // so we just check that the layers are as we expect for this test.
@@ -216,7 +241,13 @@ async fn base_and_squash_other(image: &str) -> Result<()> {
         ],
     };
 
-    let report = extract(&registry, tmp.dir_path(), strategies).await?;
+    let extracted = extract(&registry, tmp.dir_path(), strategies).await?;
+    let report = Report::builder()
+        .name(&registry.original.name)
+        .reference(&registry.original)
+        .digest(registry.digest().await?)
+        .layers(extracted)
+        .build();
 
     // We don't really know what the contents of the images will be over time,
     // so we just check that the layers are as we expect for this test.
@@ -247,7 +278,13 @@ async fn separate(image: &str) -> Result<()> {
         .map(Strategy::Separate)
         .collect::<Vec<_>>();
 
-    let report = extract(&registry, tmp.dir_path(), strategies).await?;
+    let extracted = extract(&registry, tmp.dir_path(), strategies).await?;
+    let report = Report::builder()
+        .name(&registry.original.name)
+        .reference(&registry.original)
+        .digest(registry.digest().await?)
+        .layers(extracted)
+        .build();
 
     // We don't really know what the contents of the images will be over time,
     // so we just check that the layers are as we expect for this test.

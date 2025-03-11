@@ -43,7 +43,8 @@ async fn pull_layer_filtered(
     let platform = Platform::linux_amd64();
     let reference = Reference::builder()
         .host("cgr.dev")
-        .repository("chainguard/wolfi-base")
+        .namespace("chainguard")
+        .name("wolfi-base")
         .tag("latest")
         .build();
 

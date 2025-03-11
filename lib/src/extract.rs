@@ -80,29 +80,19 @@ pub async fn extract(
     registry: &impl Source,
     output: &Path,
     strategies: impl IntoIterator<Item = Strategy>,
-) -> Result<Report> {
-    let digest = registry.digest().await.context("fetch digest")?;
-
+) -> Result<Vec<(Digest, PathBuf)>> {
     // TODO: we should be able to make these concurrent:
     // each squash needs to happen in order but the strategies
     // themselves are independent.
-    let layers = stream::iter(strategies)
+    stream::iter(strategies)
         .then(async |strategy| match strategy {
             Strategy::Squash(layers) => squash(registry, output, &layers).await,
             Strategy::Separate(layer) => copy(registry, output, layer).await,
         })
         .try_collect::<Vec<(Digest, PathBuf)>, Error, Vec<_>>()
         .await
-        .context("apply layers")?
-        .pipe(|layers| layers.into_iter().flatten().collect::<Vec<_>>());
-
-    Report::builder()
-        .name(registry.original().name().to_string())
-        .reference(registry.original().clone())
-        .digest(digest.to_string())
-        .layers(layers)
-        .build()
-        .pipe(Ok)
+        .context("apply layers")
+        .map(|layers| layers.into_iter().flatten().collect::<Vec<_>>())
 }
 
 async fn squash(

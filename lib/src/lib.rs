@@ -18,13 +18,15 @@ use std::{
     future::Future,
     ops::Add,
     path::{Path, PathBuf},
+    pin::Pin,
     str::FromStr,
 };
 use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 use tap::{Pipe, Tap};
 use tracing::{debug, warn};
 
-mod docker;
+mod cfs;
+pub mod docker;
 mod ext;
 pub mod extract;
 pub mod fossacli;
@@ -38,21 +40,21 @@ pub mod transform;
 /// Implementations of this trait can be used interchangeably to
 /// work with container images from different sources.
 pub trait Source {
-    /// The reference that was originally requested to create this source.
-    fn original(&self) -> &Reference;
+    /// Report the digest for the image.
+    fn digest(&self) -> impl Future<Output = Result<Digest>>;
+
+    /// Report the name of the image.
+    fn name(&self) -> impl Future<Output = Result<String>>;
 
     /// Enumerate layers for a container image.
     /// Layers are returned in order from the base image to the application.
     fn layers(&self) -> impl Future<Output = Result<Vec<Layer>>>;
 
-    /// Report the digest for the image.
-    fn digest(&self) -> impl Future<Output = Result<Digest>>;
-
     /// Pull the bytes of a layer from the source in a stream.
     fn pull_layer(
         &self,
         layer: &Layer,
-    ) -> impl Future<Output = Result<impl Stream<Item = Result<Bytes>>>>;
+    ) -> impl Future<Output = Result<Pin<Box<dyn Stream<Item = Result<Bytes>> + Send>>>>;
 
     /// Enumerate files in a layer.
     fn list_files(&self, layer: &Layer) -> impl Future<Output = Result<Vec<String>>>;
@@ -379,6 +381,14 @@ impl Digest {
     pub fn tarball_filename(&self) -> String {
         format!("{}.tar", self.as_hex())
     }
+
+    /// Parse the provided string as a SHA256 hex digest.
+    pub fn from_sha256(s: &str) -> Result<Self> {
+        Ok(Self {
+            algorithm: Self::SHA256.to_string(),
+            hash: hex::decode(s).map_err(|e| eyre!("invalid hex string: {e}"))?,
+        })
+    }
 }
 
 impl FromStr for Digest {
@@ -492,16 +502,20 @@ impl Version {
     }
 }
 
-/// A parsed container image reference.
+/// A container image reference provided by a user.
 #[derive(Debug, Clone, PartialEq, Eq, Builder, Serialize)]
 pub struct Reference {
     /// Registry host (e.g. "docker.io", "ghcr.io")
     #[builder(into)]
     pub host: String,
 
-    /// Repository name including namespace (e.g. "library/ubuntu", "username/project")
+    /// Repository namespace
     #[builder(into)]
-    pub repository: String,
+    pub namespace: String,
+
+    /// Repository name
+    #[builder(into)]
+    pub name: String,
 
     /// Version identifier, either a tag or SHA digest
     #[builder(into, default = Version::latest())]
@@ -509,12 +523,9 @@ pub struct Reference {
 }
 
 impl Reference {
-    /// The name of the container without the repository.
-    pub fn name(&self) -> &str {
-        self.repository
-            .split('/')
-            .last()
-            .unwrap_or(&self.repository)
+    /// The combined namespace and name, the "repository", of the reference.
+    pub fn repository(&self) -> String {
+        format!("{}/{}", self.namespace, self.name)
     }
 }
 
@@ -616,7 +627,8 @@ impl FromStr for Reference {
 
         Ok(Reference {
             host: host.to_string(),
-            repository: format!("{namespace}/{name}"),
+            namespace: namespace.to_string(),
+            name: name.to_string(),
             version,
         })
     }
@@ -624,11 +636,17 @@ impl FromStr for Reference {
 
 impl std::fmt::Display for Reference {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}", self.host, self.repository)?;
+        write!(f, "{}/{}/{}", self.host, self.namespace, self.name)?;
         match &self.version {
             Version::Tag(tag) => write!(f, ":{}", tag),
             Version::Digest(digest) => write!(f, "@{}", digest),
         }
+    }
+}
+
+impl From<&Reference> for Reference {
+    fn from(reference: &Reference) -> Self {
+        reference.clone()
     }
 }
 

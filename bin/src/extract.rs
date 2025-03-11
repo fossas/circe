@@ -1,5 +1,5 @@
 use circe_lib::{
-    extract::{extract, Strategy},
+    extract::{extract, Report, Strategy},
     registry::Registry,
     Authentication, Filters, Platform, Reference,
 };
@@ -194,9 +194,17 @@ pub async fn main(opts: Options) -> Result<()> {
         },
     };
 
-    let report = extract(&registry, &output, strategies)
+    let digest = registry.digest().await.context("fetch digest")?;
+    let layers = extract(&registry, &output, strategies)
         .await
         .context("extract image")?;
+
+    let report = Report::builder()
+        .name(registry.original.name.clone())
+        .reference(registry.original.clone())
+        .digest(digest.to_string())
+        .layers(layers)
+        .build();
 
     report
         .write(&output)
