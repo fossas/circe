@@ -30,7 +30,7 @@ pub struct Options {
 #[tracing::instrument]
 pub async fn main(opts: Options) -> Result<()> {
     info!("re-exporting image for FOSSA CLI");
-    try_strategies!(&opts; strategy_registry, strategy_daemon, strategy_tarball)
+    try_strategies!(&opts; strategy_tarball, strategy_daemon, strategy_registry)
 }
 
 async fn strategy_registry(opts: &Options) -> Result<()> {
@@ -49,7 +49,9 @@ async fn strategy_registry(opts: &Options) -> Result<()> {
         .await
         .context("configure remote registry")?;
 
-    reexport(opts, tag, registry).await.context("list files")
+    reexport(opts, tag, registry)
+        .await
+        .context("reexporting image")
 }
 
 async fn strategy_daemon(opts: &Options) -> Result<()> {
@@ -61,7 +63,9 @@ async fn strategy_daemon(opts: &Options) -> Result<()> {
         .context("build daemon reference")?;
 
     tracing::info!("pulled image from daemon");
-    reexport(opts, tag, daemon).await.context("list files")
+    reexport(opts, tag, daemon)
+        .await
+        .context("reexporting image")
 }
 
 async fn strategy_tarball(opts: &Options) -> Result<()> {
@@ -85,8 +89,10 @@ async fn strategy_tarball(opts: &Options) -> Result<()> {
     let digest = tarball.digest().await.context("get image digest")?.as_hex();
     let tag = format!("{name}:{digest}");
 
-    tracing::info!("pulled image from daemon");
-    reexport(opts, tag, tarball).await.context("list files")
+    tracing::info!("using local tarball");
+    reexport(opts, tag, tarball)
+        .await
+        .context("reexporting image")
 }
 
 #[tracing::instrument]

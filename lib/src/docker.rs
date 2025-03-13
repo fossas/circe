@@ -248,7 +248,7 @@ impl Daemon {
         #[builder(into)]
         reference: String,
     ) -> Result<Self> {
-        debug!("exporting image");
+        crate::flag_disabled_daemon_docker()?;
 
         let docker = Docker::connect_with_local_defaults().context("connect to docker daemon")?;
         let image = find_image(&docker, &reference)

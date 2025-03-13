@@ -77,6 +77,8 @@ impl Registry {
         /// The reference to use for the registry.
         reference: Reference,
     ) -> Result<Self> {
+        crate::flag_disabled_registry_oci()?;
+
         let client = client(platform.clone());
         let original = reference.clone();
         let reference = OciReference::from(&reference);

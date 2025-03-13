@@ -36,6 +36,52 @@ pub mod fossacli;
 pub mod registry;
 pub mod transform;
 
+/// Users can set this environment variable to specify the OCI base.
+/// If not set, the default is [`OCI_DEFAULT_BASE`].
+pub const OCI_BASE_VAR: &str = "OCI_DEFAULT_BASE";
+
+/// Users can set this environment variable to specify the OCI namespace.
+/// If not set, the default is [`OCI_DEFAULT_NAMESPACE`].
+pub const OCI_NAMESPACE_VAR: &str = "OCI_DEFAULT_NAMESPACE";
+
+/// The default OCI base.
+pub const OCI_DEFAULT_BASE: &str = "docker.io";
+
+/// The default OCI namespace.
+pub const OCI_DEFAULT_NAMESPACE: &str = "library";
+
+/// Set to any value to disable OCI registry connection.
+pub const OCI_DISABLE_REGISTRY_OCI_VAR: &str = "CIRCE_DISABLE_REGISTRY_OCI";
+
+/// Set to any value to disable docker daemon connection.
+pub const OCI_DISABLE_DAEMON_DOCKER_VAR: &str = "CIRCE_DISABLE_DAEMON_DOCKER";
+
+/// The OCI base.
+pub fn oci_base() -> String {
+    std::env::var(OCI_BASE_VAR).unwrap_or(OCI_DEFAULT_BASE.to_string())
+}
+
+/// The OCI namespace.
+pub fn oci_namespace() -> String {
+    std::env::var(OCI_NAMESPACE_VAR).unwrap_or(OCI_DEFAULT_NAMESPACE.to_string())
+}
+
+/// Whether OCI registry connection is disabled.
+pub fn flag_disabled_registry_oci() -> Result<()> {
+    if std::env::var(OCI_DISABLE_REGISTRY_OCI_VAR).is_ok() {
+        bail!("{OCI_DISABLE_REGISTRY_OCI_VAR} is set, skipping OCI registry connection");
+    }
+    Ok(())
+}
+
+/// Whether docker daemon connection is disabled.
+pub fn flag_disabled_daemon_docker() -> Result<()> {
+    if std::env::var(OCI_DISABLE_DAEMON_DOCKER_VAR).is_ok() {
+        bail!("{OCI_DISABLE_DAEMON_DOCKER_VAR} is set, skipping docker daemon connection");
+    }
+    Ok(())
+}
+
 /// A trait that abstracts interaction with container images.
 ///
 /// This trait provides methods to interact with container images,
@@ -77,30 +123,6 @@ pub trait Source: std::fmt::Debug {
     /// The twist though is that OCI servers can wrap various kinds of compression around tarballs;
     /// this method flattens them all down into plain uncompressed `.tar` files.
     fn layer_plain_tarball(&self, layer: &Layer) -> impl Future<Output = Result<Option<TempFile>>>;
-}
-
-/// Users can set this environment variable to specify the OCI base.
-/// If not set, the default is [`OCI_DEFAULT_BASE`].
-pub const OCI_BASE_VAR: &str = "OCI_DEFAULT_BASE";
-
-/// Users can set this environment variable to specify the OCI namespace.
-/// If not set, the default is [`OCI_DEFAULT_NAMESPACE`].
-pub const OCI_NAMESPACE_VAR: &str = "OCI_DEFAULT_NAMESPACE";
-
-/// The default OCI base.
-pub const OCI_DEFAULT_BASE: &str = "docker.io";
-
-/// The default OCI namespace.
-pub const OCI_DEFAULT_NAMESPACE: &str = "library";
-
-/// The OCI base.
-pub fn oci_base() -> String {
-    std::env::var(OCI_BASE_VAR).unwrap_or(OCI_DEFAULT_BASE.to_string())
-}
-
-/// The OCI namespace.
-pub fn oci_namespace() -> String {
-    std::env::var(OCI_NAMESPACE_VAR).unwrap_or(OCI_DEFAULT_NAMESPACE.to_string())
 }
 
 /// Authentication method for a registry.

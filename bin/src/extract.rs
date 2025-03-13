@@ -155,7 +155,7 @@ pub enum Mode {
 #[tracing::instrument]
 pub async fn main(opts: Options) -> Result<()> {
     info!("extracting image");
-    try_strategies!(&opts; strategy_registry, strategy_daemon, strategy_tarball)
+    try_strategies!(&opts; strategy_tarball, strategy_daemon, strategy_registry)
 }
 
 async fn strategy_registry(opts: &Options) -> Result<()> {
@@ -179,7 +179,9 @@ async fn strategy_registry(opts: &Options) -> Result<()> {
         .await
         .context("configure remote registry")?;
 
-    extract_layers(opts, registry).await.context("list files")
+    extract_layers(opts, registry)
+        .await
+        .context("extract layers")
 }
 
 async fn strategy_daemon(opts: &Options) -> Result<()> {
@@ -197,7 +199,7 @@ async fn strategy_daemon(opts: &Options) -> Result<()> {
         .context("build daemon reference")?;
 
     tracing::info!("pulled image from daemon");
-    extract_layers(opts, daemon).await.context("list files")
+    extract_layers(opts, daemon).await.context("extract layers")
 }
 
 async fn strategy_tarball(opts: &Options) -> Result<()> {
@@ -225,8 +227,10 @@ async fn strategy_tarball(opts: &Options) -> Result<()> {
         .await
         .context("build tarball reference")?;
 
-    tracing::info!("pulled image from daemon");
-    extract_layers(opts, tarball).await.context("list files")
+    tracing::info!("extracting layers from tarball");
+    extract_layers(opts, tarball)
+        .await
+        .context("extract layers")
 }
 
 #[tracing::instrument]

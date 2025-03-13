@@ -22,7 +22,7 @@ pub struct Options {
 #[tracing::instrument]
 pub async fn main(opts: Options) -> Result<()> {
     info!("extracting image");
-    try_strategies!(&opts; strategy_tarball,strategy_registry, strategy_daemon);
+    try_strategies!(&opts; strategy_tarball, strategy_daemon, strategy_registry)
 }
 
 async fn strategy_registry(opts: &Options) -> Result<()> {
@@ -72,7 +72,7 @@ async fn strategy_tarball(opts: &Options) -> Result<()> {
         .await
         .context("build tarball reference")?;
 
-    tracing::info!("pulled image from daemon");
+    tracing::info!("listing files in tarball");
     list_files(tarball).await.context("list files")
 }
 

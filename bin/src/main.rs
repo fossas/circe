@@ -110,7 +110,7 @@ macro_rules! try_strategies {
     ($opts:expr; $($strategy:expr),*) => {{
         $(match $strategy(&$opts).await {
             Ok(()) => return Ok(()),
-            Err(err) => tracing::warn!(?err, "unable to list files"),
+            Err(err) => tracing::warn!(?err, "strategy failed"),
         })*
 
         color_eyre::eyre::bail!("all strategies failed")
