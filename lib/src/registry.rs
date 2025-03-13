@@ -63,6 +63,7 @@ impl Registry {
         auth: Option<Authentication>,
 
         /// The platform to use for the registry.
+        #[builder(into)]
         platform: Option<Platform>,
 
         /// Filters for layers.

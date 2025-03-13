@@ -305,6 +305,12 @@ impl std::fmt::Display for Platform {
     }
 }
 
+impl From<&Platform> for Platform {
+    fn from(platform: &Platform) -> Self {
+        platform.clone()
+    }
+}
+
 /// Create a [`Digest`] from a hex string at compile time.
 /// ```
 /// let digest = circe_lib::digest!("sha256", "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");

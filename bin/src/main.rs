@@ -100,3 +100,19 @@ fn style() -> Styles {
         .invalid(AnsiColor::Red.on_default())
         .valid(AnsiColor::Blue.on_default())
 }
+
+/// Try a list of asynchronous stratgies in sequence.
+/// The first strategy to succeed stops executing the rest.
+/// If all strategies fail, an error is returned.
+#[macro_export]
+#[doc(hidden)]
+macro_rules! try_strategies {
+    ($opts:expr; $($strategy:expr),*) => {{
+        $(match $strategy(&$opts).await {
+            Ok(()) => return Ok(()),
+            Err(err) => tracing::warn!(?err, "unable to list files"),
+        })*
+
+        color_eyre::eyre::bail!("all strategies failed")
+    }}
+}
