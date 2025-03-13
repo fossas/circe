@@ -2,7 +2,7 @@ use async_tempfile::TempDir;
 use circe_lib::{
     extract::{extract, Report, Strategy},
     registry::Registry,
-    Digest, Reference,
+    Digest, Reference, Source,
 };
 use color_eyre::Result;
 use serde_json::{json, Value};

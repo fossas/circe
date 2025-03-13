@@ -1,22 +1,29 @@
 //! Container file system operations.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    pin::Pin,
+};
 
 use async_tempfile::TempFile;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use color_eyre::{
     eyre::{Context, OptionExt},
     Result,
 };
 use futures_lite::{Stream, StreamExt};
 use os_str_bytes::OsStrBytesExt;
+use serde::de::DeserializeOwned;
 use tap::Pipe;
-use tokio::io::{AsyncRead, AsyncWriteExt, BufWriter};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio_tar::{Archive, Entry};
-use tokio_util::io::StreamReader;
+use tokio_util::io::{ReaderStream, StreamReader};
 use tracing::{debug, warn};
 
-use crate::{transform::Chunk, FilterMatch, Filters};
+use crate::{
+    transform::{self, Chunk},
+    Digest, FilterMatch, Filters, Layer, LayerMediaType, LayerMediaTypeFlag,
+};
 
 /// Unwrap a value, logging an error and performing the provided action if it fails.
 macro_rules! unwrap_warn {
@@ -34,7 +41,64 @@ macro_rules! unwrap_warn {
     };
 }
 
+/// Hash the specified file on disk.
+pub async fn file_digest(path: &Path) -> Result<Digest> {
+    use sha2::{Digest as _, Sha256};
+    let mut hasher = Sha256::new();
+    let mut file = tokio::fs::File::open(path).await.context("open file")?;
+    let mut buffer = BytesMut::with_capacity(1024);
+    while let Ok(n) = file.read_buf(&mut buffer).await {
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+        buffer.clear();
+    }
+
+    let hash = hasher.finalize().to_vec();
+    Ok(Digest::from_hash(hash))
+}
+
+/// Transform an OCI image layer (based on its media type) into its underlying tarball.
+/// Foreign layers return `None`.
+#[tracing::instrument(skip(stream))]
+pub fn peel_layer(
+    layer: &Layer,
+    stream: impl Stream<Item = Chunk> + Unpin + 'static,
+) -> Option<Pin<Box<dyn Stream<Item = Chunk>>>> {
+    // Applying the layer requires interpreting the layer's media type.
+    match &layer.media_type {
+        // Standard OCI layers.
+        LayerMediaType::Oci(flags) => {
+            // Foreign layers are skipped, as they would if you ran `docker pull`.
+            // This causes an extra iteration over the flags for layers that aren't foreign,
+            // but the flag count is small and this saves us the complexity of setting up layer transforms
+            // and then discarding them if this flag is encountered.
+            if flags.contains(&LayerMediaTypeFlag::Foreign) {
+                warn!("skip: foreign layer");
+                return None;
+            }
+
+            Some(match flags.as_slice() {
+                // No flags; this means the layer is uncompressed.
+                [] => Box::pin(stream),
+
+                // The layer is compressed with zstd.
+                [LayerMediaTypeFlag::Zstd] => Box::pin(transform::zstd(stream)),
+
+                // The layer is compressed with gzip.
+                [LayerMediaTypeFlag::Gzip] => Box::pin(transform::gzip(stream)),
+
+                // The layer has a more complicated set of flags.
+                // For this, we fall back to the generic sequence operator.
+                _ => Box::pin(transform::sequence(stream, flags)),
+            })
+        }
+    }
+}
+
 /// Sink the stream into a temporary file.
+#[tracing::instrument(skip(stream))]
 pub async fn collect_tmp<E: std::error::Error + Send + Sync + 'static>(
     mut stream: impl Stream<Item = Result<Bytes, E>> + Unpin,
 ) -> Result<TempFile> {
@@ -52,7 +116,85 @@ pub async fn collect_tmp<E: std::error::Error + Send + Sync + 'static>(
     Ok(file)
 }
 
+/// Buffer the contents of a byte stream.
+/// Limited to 100MB of memory.
+#[tracing::instrument(skip(stream))]
+pub async fn collect_buf(stream: impl Stream<Item = Chunk> + Unpin) -> Result<Bytes> {
+    let mut read = StreamReader::new(stream.take(100 * 1024 * 1024));
+    let mut buf = Vec::new();
+    read.read_to_end(&mut buf).await.context("read file")?;
+    Ok(Bytes::from(buf))
+}
+
+/// Collect the contents of a byte stream and parse them as JSON.
+/// Limited to 100MB of buffered memory; the parsed JSON object can be larger.
+#[tracing::instrument(skip(stream))]
+pub async fn collect_json<T: DeserializeOwned>(
+    stream: impl Stream<Item = Chunk> + Unpin,
+) -> Result<T> {
+    let content = collect_buf(stream).await?;
+    serde_json::from_slice(&content).context("parse json")
+}
+
+/// Read a the buffered contents of a specific file out of a tarball.
+/// Returns the parsed contents and path of the first file for which the closure evaluates to `true`.
+/// If no file is found, this function returns `None`.
+#[tracing::instrument(skip(closure))]
+pub async fn extract_json<T: DeserializeOwned>(
+    tarball: &Path,
+    closure: impl Fn(&Path) -> bool,
+) -> Result<Option<T>> {
+    match extract_file(tarball, closure).await? {
+        Some(stream) => collect_json(stream).await.map(Some),
+        None => Ok(None),
+    }
+}
+
+/// Read a the buffered contents of a specific file out of a tarball.
+/// Returns the contents of the first file for which the closure evaluates to `true`.
+/// If no file is found, this function returns `None`.
+#[tracing::instrument(skip(closure))]
+pub async fn extract_file_buf(
+    tarball: &Path,
+    closure: impl Fn(&Path) -> bool,
+) -> Result<Option<Bytes>> {
+    match extract_file(tarball, closure).await? {
+        Some(stream) => collect_buf(stream).await.map(Some),
+        None => Ok(None),
+    }
+}
+
+/// Read a the contents of a specific file out of a tarball.
+/// Returns the contents of the first file for which the closure evaluates to `true`.
+/// If no file is found, this function returns `None`.
+#[tracing::instrument(skip(closure))]
+pub async fn extract_file(
+    tarball: &Path,
+    closure: impl Fn(&Path) -> bool,
+) -> Result<Option<impl Stream<Item = Chunk>>> {
+    let archive = tokio::fs::File::open(tarball)
+        .await
+        .context("open docker tarball")?;
+
+    let mut archive = Archive::new(archive);
+    let mut entries = archive.entries().context("read entries")?;
+    while let Some(entry) = entries.next().await {
+        let entry = entry.context("read entry")?;
+        let path = entry.path().context("read entry path")?;
+        if !closure(&path) {
+            continue;
+        }
+
+        debug!(?path, "extracting file");
+        let stream = ReaderStream::new(entry);
+        return Ok(Some(stream));
+    }
+
+    Ok(None)
+}
+
 /// Apply a layer diff tarball to a location on disk.
+#[tracing::instrument(skip(stream))]
 pub async fn apply_tarball(
     path_filters: &Filters,
     stream: impl Stream<Item = Chunk> + Unpin,
@@ -130,6 +272,7 @@ pub async fn apply_tarball(
 }
 
 /// Enumerate files in a tarball.
+#[tracing::instrument(skip(stream))]
 pub async fn enumerate_tarball(stream: impl Stream<Item = Chunk> + Unpin) -> Result<Vec<String>> {
     let reader = StreamReader::new(stream);
     let mut archive = Archive::new(reader);
@@ -151,6 +294,7 @@ pub async fn enumerate_tarball(stream: impl Stream<Item = Chunk> + Unpin) -> Res
 ///
 /// Returns true if the symlink was handled;
 /// false if the symlink should fall back to standard handling from `async_tar`.
+#[tracing::instrument(skip(entry))]
 pub async fn safe_symlink<R: AsyncRead + Unpin>(entry: &Entry<R>, dir: &Path) -> Result<bool> {
     let header = entry.header();
     let kind = header.entry_type();
@@ -198,6 +342,8 @@ pub async fn safe_symlink<R: AsyncRead + Unpin>(entry: &Entry<R>, dir: &Path) ->
         })
 }
 
+/// Compute the relative path from a source to a destination.
+#[tracing::instrument]
 pub fn compute_symlink_target(src: &Path, dst: &Path) -> Result<PathBuf> {
     let common_prefix = src
         .components()
@@ -234,7 +380,12 @@ pub fn compute_symlink_target(src: &Path, dst: &Path) -> Result<PathBuf> {
 pub fn strip_root(path: impl AsRef<Path>) -> PathBuf {
     path.as_ref()
         .components()
-        .filter(|c| !matches!(c, std::path::Component::Prefix(_) | std::path::Component::RootDir))
+        .filter(|c| {
+            !matches!(
+                c,
+                std::path::Component::Prefix(_) | std::path::Component::RootDir
+            )
+        })
         .pipe(PathBuf::from_iter)
 }
 

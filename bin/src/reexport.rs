@@ -2,7 +2,7 @@ use async_tempfile::TempFile;
 use circe_lib::{
     fossacli::{Image, Manifest, ManifestEntry, RootFs},
     registry::Registry,
-    Authentication, Digest, Reference,
+    Authentication, Digest, Reference, Source,
 };
 use clap::Parser;
 use color_eyre::eyre::{Context, Result};

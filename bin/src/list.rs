@@ -20,10 +20,17 @@ pub async fn main(opts: Options) -> Result<()> {
     info!("extracting image");
 
     let daemon = Daemon::builder().reference(&opts.target.image);
-    if let Ok(daemon) = daemon.build().await {
-        let listing = list_files(daemon).await.context("list files")?;
-        let rendered = serde_json::to_string_pretty(&listing).context("render listing")?;
-        println!("{rendered}");
+    match daemon.build().await {
+        Ok(daemon) => {
+            tracing::info!(?daemon, "pulled from daemon");
+            let listing = list_files(daemon).await.context("list files")?;
+            let rendered = serde_json::to_string_pretty(&listing).context("render listing")?;
+            println!("{rendered}");
+            return Ok(());
+        }
+        Err(err) => {
+            tracing::warn!(?err, "unable to pull from daemon");
+        }
     }
 
     let reference = Reference::from_str(&opts.target.image)?;
@@ -47,9 +54,11 @@ pub async fn main(opts: Options) -> Result<()> {
     Ok(())
 }
 
+#[tracing::instrument]
 async fn list_files(registry: impl Source) -> Result<HashMap<String, Vec<String>>> {
     let layers = registry.layers().await.context("list layers")?;
     let count = layers.len();
+    debug!(?count, ?layers, "listed layers");
     info!("enumerated {}", pluralize("layer", count as isize, true));
 
     let mut listing = HashMap::new();

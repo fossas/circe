@@ -1,7 +1,7 @@
 use circe_lib::{
     extract::{extract, Report, Strategy},
     registry::Registry,
-    Authentication, Filters, Platform, Reference,
+    Authentication, Filters, Platform, Reference, Source,
 };
 use clap::{Args, Parser, ValueEnum};
 use color_eyre::eyre::{bail, Context, Result};

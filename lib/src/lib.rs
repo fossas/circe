@@ -15,7 +15,7 @@ use enum_assoc::Assoc;
 use extract::Strategy;
 use futures_lite::Stream;
 use itertools::Itertools;
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     borrow::Cow,
     future::Future,
@@ -28,7 +28,7 @@ use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 use tap::{Pipe, Tap};
 use tracing::{debug, warn};
 
-mod cfs;
+mod cio;
 pub mod docker;
 mod ext;
 pub mod extract;
@@ -42,7 +42,7 @@ pub mod transform;
 /// whether they're stored in a remote registry or available locally.
 /// Implementations of this trait can be used interchangeably to
 /// work with container images from different sources.
-pub trait Source {
+pub trait Source: std::fmt::Debug {
     /// Report the digest for the image.
     fn digest(&self) -> impl Future<Output = Result<Digest>>;
 
@@ -392,6 +392,14 @@ impl Digest {
             hash: hex::decode(s).map_err(|e| eyre!("invalid hex string: {e}"))?,
         })
     }
+
+    /// Create a new instance assuming it is sha256 encoded.
+    pub fn from_hash(hash: impl Into<Vec<u8>>) -> Self {
+        Self {
+            algorithm: Self::SHA256.to_string(),
+            hash: hash.into(),
+        }
+    }
 }
 
 impl FromStr for Digest {
@@ -433,6 +441,16 @@ impl From<&Digest> for Digest {
 impl Serialize for Digest {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.to_string().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Digest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        FromStr::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
 
@@ -655,7 +673,8 @@ impl From<&Reference> for Reference {
 
 /// A descriptor for a specific layer within an OCI container image.
 /// This follows the OCI Image Spec's layer descriptor format.
-#[derive(Debug, Clone, PartialEq, Eq, Builder)]
+#[derive(Debug, Clone, PartialEq, Eq, Builder, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Layer {
     /// The content-addressable digest of the layer
     #[builder(into)]
@@ -806,6 +825,16 @@ impl FromStr for LayerMediaType {
     }
 }
 
+impl<'de> Deserialize<'de> for LayerMediaType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        FromStr::from_str(&s).map_err(serde::de::Error::custom)
+    }
+}
+
 impl std::fmt::Display for LayerMediaType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_ref())?;
@@ -929,7 +958,7 @@ where
     Filter: FilterMatch<&'a T>,
 {
     fn matches(&self, value: &'a T) -> bool {
-        self.0.is_empty() || self.0.iter().any(|filter| filter.matches(value))
+        !self.0.is_empty() && self.0.iter().any(|filter| filter.matches(value))
     }
 }
 

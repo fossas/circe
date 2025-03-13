@@ -17,15 +17,14 @@ use oci_client::{
     secrets::RegistryAuth,
     Client, Reference as OciReference, RegistryOperation,
 };
-use tap::Pipe;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::{
-    cfs::{apply_tarball, collect_tmp, enumerate_tarball},
+    cio::{apply_tarball, collect_tmp, enumerate_tarball, peel_layer},
     ext::PriorityFind,
-    transform::{self, Chunk},
-    Authentication, Digest, Filter, FilterMatch, Filters, Layer, LayerMediaType,
-    LayerMediaTypeFlag, Platform, Reference, Source, Version,
+    transform::Chunk,
+    Authentication, Digest, Filter, FilterMatch, Filters, Layer, LayerMediaType, Platform,
+    Reference, Source, Version,
 };
 
 /// Each instance is a unique view of remote registry for a specific [`Platform`] and [`Reference`].
@@ -101,10 +100,36 @@ impl Registry {
 }
 
 impl Registry {
+    async fn pull_layer_internal(&self, layer: &Layer) -> Result<impl Stream<Item = Chunk>> {
+        let oci_layer = OciDescriptor::from(layer);
+        self.client
+            .pull_blob_stream(&self.reference, &oci_layer)
+            .await
+            .context("initiate stream")
+            .map(|layer| layer.stream)
+    }
+}
+
+impl Source for Registry {
+    /// Report the digest for the image.
+    #[tracing::instrument]
+    async fn digest(&self) -> Result<Digest> {
+        let (_, digest) = self
+            .client
+            .pull_image_manifest(&self.reference, &self.auth)
+            .await
+            .context("pull image manifest")?;
+        Digest::from_str(&digest).context("parse digest")
+    }
+
+    async fn name(&self) -> Result<String> {
+        Ok(self.original.name.clone())
+    }
+
     /// Enumerate layers for a container reference in the remote registry.
     /// Layers are returned in order from the base image to the application.
     #[tracing::instrument]
-    pub async fn layers(&self) -> Result<Vec<Layer>> {
+    async fn layers(&self) -> Result<Vec<Layer>> {
         let (manifest, _) = self
             .client
             .pull_image_manifest(&self.reference, &self.auth)
@@ -113,20 +138,9 @@ impl Registry {
         manifest
             .layers
             .into_iter()
-            .filter(|layer| self.layer_filters.matches(layer))
+            .filter(|layer| !self.layer_filters.matches(layer))
             .map(Layer::try_from)
             .collect()
-    }
-
-    /// Report the digest for the image.
-    #[tracing::instrument]
-    pub async fn digest(&self) -> Result<Digest> {
-        let (_, digest) = self
-            .client
-            .pull_image_manifest(&self.reference, &self.auth)
-            .await
-            .context("pull image manifest")?;
-        Digest::from_str(&digest).context("parse digest")
     }
 
     /// Pull the bytes of a layer from the registry in a stream.
@@ -145,7 +159,7 @@ impl Registry {
     /// - A file is added.
     /// - A file is removed.
     /// - A file is modified.
-    pub async fn pull_layer(
+    async fn pull_layer(
         &self,
         layer: &Layer,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes>> + Send>>> {
@@ -154,61 +168,13 @@ impl Registry {
             .map(|stream| stream.map(|chunk| chunk.context("read chunk")).boxed())
     }
 
-    async fn pull_layer_internal(&self, layer: &Layer) -> Result<impl Stream<Item = Chunk>> {
-        let oci_layer = OciDescriptor::from(layer);
-        self.client
-            .pull_blob_stream(&self.reference, &oci_layer)
-            .await
-            .context("initiate stream")
-            .map(|layer| layer.stream)
-    }
-
     /// Enumerate files in a layer.
     #[tracing::instrument]
-    pub async fn list_files(&self, layer: &Layer) -> Result<Vec<String>> {
+    async fn list_files(&self, layer: &Layer) -> Result<Vec<String>> {
         let stream = self.pull_layer_internal(layer).await?;
-
-        // Applying the layer requires interpreting the layer's media type.
-        match &layer.media_type {
-            // Standard OCI layers.
-            LayerMediaType::Oci(flags) => {
-                // Foreign layers are skipped, as they would if you ran `docker pull`.
-                // This causes an extra iteration over the flags for layers that aren't foreign,
-                // but the flag count is small and this saves us the complexity of setting up layer transforms
-                // and then discarding them if this flag is encountered.
-                if flags.contains(&LayerMediaTypeFlag::Foreign) {
-                    warn!("skip: foreign layer");
-                    return Ok(Vec::new());
-                }
-
-                // The vast majority of the time (maybe even all the time), the layer only has zero or one flags.
-                // Meanwhile, `transform::sequence` forces the streams into dynamic dispatch, imposing extra overhead.
-                // This match allows us to specialize the stream based on the most common cases,
-                // while still supporting arbitrary flags.
-                match flags.as_slice() {
-                    // No flags; this means the layer is uncompressed.
-                    [] => enumerate_tarball(stream).await,
-
-                    // The layer is compressed with zstd.
-                    [LayerMediaTypeFlag::Zstd] => {
-                        let stream = transform::zstd(stream);
-                        enumerate_tarball(stream).await
-                    }
-
-                    // The layer is compressed with gzip.
-                    [LayerMediaTypeFlag::Gzip] => {
-                        let stream = transform::gzip(stream);
-                        enumerate_tarball(stream).await
-                    }
-
-                    // The layer has a more complicated set of flags.
-                    // For this, we fall back to the generic sequence operator.
-                    _ => {
-                        let stream = transform::sequence(stream, flags);
-                        enumerate_tarball(stream).await
-                    }
-                }
-            }
+        match peel_layer(layer, stream) {
+            Some(stream) => enumerate_tarball(stream).await,
+            None => Ok(vec![]),
         }
     }
 
@@ -253,50 +219,11 @@ impl Registry {
     // then still applying them serially. Since network transfer is the slowest part of this process,
     // this would speed up the overall process.
     #[tracing::instrument]
-    pub async fn apply_layer(&self, layer: &Layer, output: &Path) -> Result<()> {
+    async fn apply_layer(&self, layer: &Layer, output: &Path) -> Result<()> {
         let stream = self.pull_layer_internal(layer).await?;
-
-        // Applying the layer requires interpreting the layer's media type.
-        match &layer.media_type {
-            // Standard OCI layers.
-            LayerMediaType::Oci(flags) => {
-                // Foreign layers are skipped, as they would if you ran `docker pull`.
-                // This causes an extra iteration over the flags for layers that aren't foreign,
-                // but the flag count is small and this saves us the complexity of setting up layer transforms
-                // and then discarding them if this flag is encountered.
-                if flags.contains(&LayerMediaTypeFlag::Foreign) {
-                    warn!("skip: foreign layer");
-                    return Ok(());
-                }
-
-                // The vast majority of the time (maybe even all the time), the layer only has zero or one flags.
-                // Meanwhile, `transform::sequence` forces the streams into dynamic dispatch, imposing extra overhead.
-                // This match allows us to specialize the stream based on the most common cases,
-                // while still supporting arbitrary flags.
-                match flags.as_slice() {
-                    // No flags; this means the layer is uncompressed.
-                    [] => apply_tarball(&self.file_filters, stream, output).await,
-
-                    // The layer is compressed with zstd.
-                    [LayerMediaTypeFlag::Zstd] => {
-                        let stream = transform::zstd(stream);
-                        apply_tarball(&self.file_filters, stream, output).await
-                    }
-
-                    // The layer is compressed with gzip.
-                    [LayerMediaTypeFlag::Gzip] => {
-                        let stream = transform::gzip(stream);
-                        apply_tarball(&self.file_filters, stream, output).await
-                    }
-
-                    // The layer has a more complicated set of flags.
-                    // For this, we fall back to the generic sequence operator.
-                    _ => {
-                        let stream = transform::sequence(stream, flags);
-                        apply_tarball(&self.file_filters, stream, output).await
-                    }
-                }
-            }
+        match peel_layer(layer, stream) {
+            Some(stream) => apply_tarball(&self.file_filters, stream, output).await,
+            None => Ok(()),
         }
     }
 
@@ -318,75 +245,12 @@ impl Registry {
     ///   For the purposes of FOSSA CLI interop this is fine as the `reexport` subcommand doesn't even support filters,
     ///   but if we ever want to make this work for more than just that we'll need to re-evaluate.
     #[tracing::instrument]
-    pub async fn layer_plain_tarball(&self, layer: &Layer) -> Result<Option<TempFile>> {
-        let stream = self.pull_layer_internal(layer).await?;
-
-        // Applying the layer requires interpreting the layer's media type.
-        match &layer.media_type {
-            // Standard OCI layers.
-            LayerMediaType::Oci(flags) => {
-                // Foreign layers are skipped, as they would if you ran `docker pull`.
-                // This causes an extra iteration over the flags for layers that aren't foreign,
-                // but the flag count is small and this saves us the complexity of setting up layer transforms
-                // and then discarding them if this flag is encountered.
-                if flags.contains(&LayerMediaTypeFlag::Foreign) {
-                    warn!("skip: foreign layer");
-                    return Ok(None);
-                }
-
-                // The vast majority of the time (maybe even all the time), the layer only has zero or one flags.
-                // Meanwhile, `transform::sequence` forces the streams into dynamic dispatch, imposing extra overhead.
-                // This match allows us to specialize the stream based on the most common cases,
-                // while still supporting arbitrary flags.
-                Ok(Some(match flags.as_slice() {
-                    // No flags; this means the layer is already uncompressed.
-                    [] => collect_tmp(stream).await?,
-
-                    // The layer is compressed with zstd.
-                    [LayerMediaTypeFlag::Zstd] => transform::zstd(stream).pipe(collect_tmp).await?,
-
-                    // The layer is compressed with gzip.
-                    [LayerMediaTypeFlag::Gzip] => transform::gzip(stream).pipe(collect_tmp).await?,
-
-                    // The layer has a more complicated set of flags.
-                    // For this, we fall back to the generic sequence operator.
-                    _ => transform::sequence(stream, flags).pipe(collect_tmp).await?,
-                }))
-            }
-        }
-    }
-}
-
-impl Source for Registry {
-    async fn digest(&self) -> Result<Digest> {
-        self.digest().await
-    }
-
-    async fn name(&self) -> Result<String> {
-        Ok(self.original.name.clone())
-    }
-
-    async fn layers(&self) -> Result<Vec<Layer>> {
-        self.layers().await
-    }
-
-    async fn pull_layer(
-        &self,
-        layer: &Layer,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes>> + Send>>> {
-        self.pull_layer(layer).await
-    }
-
-    async fn list_files(&self, layer: &Layer) -> Result<Vec<String>> {
-        self.list_files(layer).await
-    }
-
-    async fn apply_layer(&self, layer: &Layer, output: &Path) -> Result<()> {
-        self.apply_layer(layer, output).await
-    }
-
     async fn layer_plain_tarball(&self, layer: &Layer) -> Result<Option<TempFile>> {
-        self.layer_plain_tarball(layer).await
+        let stream = self.pull_layer_internal(layer).await?;
+        match peel_layer(layer, stream) {
+            Some(stream) => collect_tmp(stream).await.map(Some),
+            None => Ok(None),
+        }
     }
 }
 
