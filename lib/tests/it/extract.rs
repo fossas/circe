@@ -25,7 +25,6 @@ macro_rules! assert_layers_extracted {
 
 #[test_log::test(tokio::test)]
 async fn report_roundtrip() -> Result<()> {
-    let reference = Reference::from_str("cgr.dev/chainguard/wolfi-base:latest")?;
     let digest_img = Digest::from_str(
         "sha256:931040ffeedc9148b2ed852bc1a9531af141a6bc1f4761ea96c1f2c13b8b6659",
     )?;
@@ -37,8 +36,6 @@ async fn report_roundtrip() -> Result<()> {
     )?;
 
     let report = Report::builder()
-        .name("wolfi-base")
-        .reference(reference)
         .digest(digest_img.clone())
         .layers([
             (digest_layer_1.clone(), PathBuf::from("/tmp/layer1")),
@@ -95,14 +92,9 @@ async fn report(image: &str) -> Result<()> {
     .await?;
 
     let report = Report::builder()
-        .name(&registry.original.name)
-        .reference(&registry.original)
         .digest(registry.digest().await?)
         .layers(extracted)
         .build();
-
-    pretty_assertions::assert_eq!(report.name, registry.original.name);
-    pretty_assertions::assert_eq!(report.reference, registry.original);
 
     let actual_digest = registry.digest().await?;
     pretty_assertions::assert_eq!(report.digest, actual_digest.to_string());
@@ -135,8 +127,6 @@ async fn squash(image: &str) -> Result<()> {
 
     let extracted = extract(&registry, tmp.dir_path(), Strategy::Squash(layers)).await?;
     let report = Report::builder()
-        .name(&registry.original.name)
-        .reference(&registry.original)
         .digest(registry.digest().await?)
         .layers(extracted)
         .build();
@@ -169,8 +159,6 @@ async fn base(image: &str) -> Result<()> {
         .expect("image should have at least one layer");
     let extracted = extract(&registry, tmp.dir_path(), Strategy::Separate(base.clone())).await?;
     let report = Report::builder()
-        .name(&registry.original.name)
-        .reference(&registry.original)
         .digest(registry.digest().await?)
         .layers(extracted)
         .build();
@@ -204,8 +192,6 @@ async fn squash_other(image: &str) -> Result<()> {
     )
     .await?;
     let report = Report::builder()
-        .name(&registry.original.name)
-        .reference(&registry.original)
         .digest(registry.digest().await?)
         .layers(extracted)
         .build();
@@ -243,8 +229,6 @@ async fn base_and_squash_other(image: &str) -> Result<()> {
 
     let extracted = extract(&registry, tmp.dir_path(), strategies).await?;
     let report = Report::builder()
-        .name(&registry.original.name)
-        .reference(&registry.original)
         .digest(registry.digest().await?)
         .layers(extracted)
         .build();
@@ -280,8 +264,6 @@ async fn separate(image: &str) -> Result<()> {
 
     let extracted = extract(&registry, tmp.dir_path(), strategies).await?;
     let report = Report::builder()
-        .name(&registry.original.name)
-        .reference(&registry.original)
         .digest(registry.digest().await?)
         .layers(extracted)
         .build();

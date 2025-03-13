@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::{Digest, Layer, Reference, Source};
+use crate::{Digest, Layer, Source};
 use bon::Builder;
 use color_eyre::{
     eyre::{bail, Context, Error},
@@ -15,14 +15,6 @@ use tracing::info;
 /// Report containing details about the extracted container image.
 #[derive(Debug, Serialize, Builder)]
 pub struct Report {
-    /// The original reference requested when extracting the image.
-    #[builder(into)]
-    pub reference: Reference,
-
-    /// The repository name of the image.
-    #[builder(into)]
-    pub name: String,
-
     /// The content-addressable digest of the image.
     #[builder(into)]
     pub digest: String,
