@@ -9,7 +9,7 @@ use async_tempfile::TempFile;
 use bytes::{Bytes, BytesMut};
 use color_eyre::{
     eyre::{Context, OptionExt},
-    Result,
+    Result, Section, SectionExt,
 };
 use futures_lite::{Stream, StreamExt};
 use os_str_bytes::OsStrBytesExt;
@@ -133,7 +133,19 @@ pub async fn collect_json<T: DeserializeOwned>(
     stream: impl Stream<Item = Chunk> + Unpin,
 ) -> Result<T> {
     let content = collect_buf(stream).await?;
-    serde_json::from_slice(&content).context("parse json")
+    serde_json::from_slice(&content)
+        .context("parse json")
+        .with_section(|| display_maybe_json(&content).header("Content"))
+}
+
+fn display_maybe_json(content: &[u8]) -> String {
+    if content.iter().take(8000).any(|&b| b == b'\0') {
+        String::from("<binary>")
+    } else if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&content) {
+        json.to_string()
+    } else {
+        String::from_utf8_lossy(content).to_string()
+    }
 }
 
 /// Read a the buffered contents of a specific file out of a tarball.
