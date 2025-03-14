@@ -133,6 +133,7 @@ async fn daemon(image: &str) -> Result<()> {
     let sh = Shell::new().context("create shell")?;
     sh.change_dir(&workspace);
     sh.set_var("CIRCE_DISABLE_REGISTRY_OCI", "true");
+    sh.set_var("RUST_LOG", "debug");
 
     tracing::info!(image, "pull image");
     cmd!(sh, "docker pull {image}").run()?;
@@ -175,6 +176,7 @@ async fn pull_and_save(image: &str) -> Result<()> {
     let sh = Shell::new().context("create shell")?;
     sh.change_dir(&workspace);
     sh.set_var("CIRCE_DISABLE_REGISTRY_OCI", "true");
+    sh.set_var("RUST_LOG", "debug");
 
     tracing::info!(image, output, "pull and save image");
     cmd!(sh, "docker pull {image}").run()?;
