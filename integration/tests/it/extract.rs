@@ -9,8 +9,8 @@ use xshell::{Shell, cmd};
 )]
 #[test_log::test(tokio::test)]
 #[cfg_attr(
-    not(feature = "test-integration"),
-    ignore = "skipping integration tests"
+    not(all(feature = "test-integration", feature = "test-docker-interop")),
+    ignore = "skipping integration tests that require docker to be installed"
 )]
 async fn daemon(image: &str) -> Result<()> {
     let workspace = crate::workspace_root();
@@ -34,8 +34,8 @@ async fn daemon(image: &str) -> Result<()> {
 )]
 #[test_log::test(tokio::test)]
 #[cfg_attr(
-    not(feature = "test-integration"),
-    ignore = "skipping integration tests"
+    not(all(feature = "test-integration", feature = "test-docker-interop")),
+    ignore = "skipping integration tests that require docker to be installed"
 )]
 async fn pull_and_save(image: &str) -> Result<()> {
     let workspace = crate::workspace_root();
