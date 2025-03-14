@@ -101,7 +101,7 @@ fn style() -> Styles {
         .valid(AnsiColor::Blue.on_default())
 }
 
-/// Try a list of asynchronous stratgies in sequence.
+/// Try a list of asynchronous strategies in sequence.
 /// The first strategy to succeed stops executing the rest.
 /// If all strategies fail, an error is returned.
 #[macro_export]
