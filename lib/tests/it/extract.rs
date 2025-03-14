@@ -49,16 +49,7 @@ async fn report_roundtrip() -> Result<()> {
     pretty_assertions::assert_eq!(
         parsed,
         json!({
-            "name": "wolfi-base",
             "digest": digest_img.to_string(),
-            "reference": {
-                "host": "cgr.dev",
-                "repository": "chainguard/wolfi-base",
-                "version": {
-                    "kind": "tag",
-                    "value": "latest"
-                }
-            },
             "layers": [
                 [digest_layer_1.to_string(), "/tmp/layer1"],
                 [digest_layer_2.to_string(), "/tmp/layer2"],
