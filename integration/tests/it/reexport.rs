@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::collections::HashSet;
 
 use assert_fs::prelude::*;
 use color_eyre::{Result, eyre::Context};
@@ -7,8 +7,6 @@ use serde_json::Value;
 use simple_test_case::test_case;
 use xshell::{Shell, cmd};
 
-/// Test that `circe reexport` then allows FOSSA CLI to scan
-/// tarballs that have been saved locally with `docker pull $IMAGE && docker save $IMAGE`.
 #[test_case(
     "nginx:latest";
     "nginx:latest"
@@ -19,7 +17,7 @@ use xshell::{Shell, cmd};
     ignore = "skipping integration tests"
 )]
 async fn daemon(image: &str) -> Result<()> {
-    let workspace = workspace_root();
+    let workspace = crate::workspace_root();
     let temp = assert_fs::TempDir::new().context("create temp dir")?;
     let reexport = temp.child("reexport.tar").to_string_lossy().to_string();
 
@@ -50,8 +48,6 @@ async fn daemon(image: &str) -> Result<()> {
     Ok(())
 }
 
-/// Test that `circe reexport` then allows FOSSA CLI to scan
-/// tarballs that have been saved locally with `docker pull $IMAGE && docker save $IMAGE`.
 #[test_case(
     "nginx:latest";
     "nginx:latest"
@@ -62,7 +58,7 @@ async fn daemon(image: &str) -> Result<()> {
     ignore = "skipping integration tests"
 )]
 async fn pull_and_save(image: &str) -> Result<()> {
-    let workspace = workspace_root();
+    let workspace = crate::workspace_root();
     let temp = assert_fs::TempDir::new().context("create temp dir")?;
     let output = temp.child("image.tar").to_string_lossy().to_string();
     let reexport = temp.child("reexport.tar").to_string_lossy().to_string();
@@ -123,7 +119,7 @@ async fn pull_and_save(image: &str) -> Result<()> {
     ignore = "skipping integration tests"
 )]
 async fn scannable(image: &str) -> Result<()> {
-    let workspace = workspace_root();
+    let workspace = crate::workspace_root();
     let temp = assert_fs::TempDir::new().context("create temp dir")?;
     let reexport = temp.child("reexport.tar").to_string_lossy().to_string();
 
@@ -178,7 +174,7 @@ async fn scannable(image: &str) -> Result<()> {
     ignore = "skipping integration tests that require docker to be installed"
 )]
 async fn compare(image: &str, reference: &str) -> Result<()> {
-    let workspace = workspace_root();
+    let workspace = crate::workspace_root();
     let temp = assert_fs::TempDir::new().context("create temp dir")?;
     let reexport = temp.child("reexport.tar").to_string_lossy().to_string();
 
@@ -227,11 +223,4 @@ struct CliContainerImage {
 struct CliContainerLayer {
     observations: HashSet<Value>,
     src_units: HashSet<Value>,
-}
-
-fn workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("workspace root")
-        .to_path_buf()
 }
