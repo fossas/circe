@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::{registry::Registry, Digest, Layer, Reference};
+use crate::{Digest, Layer, Source};
 use bon::Builder;
 use color_eyre::{
     eyre::{bail, Context, Error},
@@ -15,14 +15,6 @@ use tracing::info;
 /// Report containing details about the extracted container image.
 #[derive(Debug, Serialize, Builder)]
 pub struct Report {
-    /// The original reference requested when extracting the image.
-    #[builder(into)]
-    pub reference: Reference,
-
-    /// The repository name of the image.
-    #[builder(into)]
-    pub name: String,
-
     /// The content-addressable digest of the image.
     #[builder(into)]
     pub digest: String,
@@ -77,37 +69,27 @@ impl IntoIterator for Strategy {
 
 /// Extract container layers according to the specified strategies.
 pub async fn extract(
-    registry: &Registry,
-    output: &PathBuf,
+    registry: &impl Source,
+    output: &Path,
     strategies: impl IntoIterator<Item = Strategy>,
-) -> Result<Report> {
-    let digest = registry.digest().await.context("fetch digest")?;
-
+) -> Result<Vec<(Digest, PathBuf)>> {
     // TODO: we should be able to make these concurrent:
     // each squash needs to happen in order but the strategies
     // themselves are independent.
-    let layers = stream::iter(strategies)
+    stream::iter(strategies)
         .then(async |strategy| match strategy {
             Strategy::Squash(layers) => squash(registry, output, &layers).await,
             Strategy::Separate(layer) => copy(registry, output, layer).await,
         })
         .try_collect::<Vec<(Digest, PathBuf)>, Error, Vec<_>>()
         .await
-        .context("apply layers")?
-        .pipe(|layers| layers.into_iter().flatten().collect::<Vec<_>>());
-
-    Report::builder()
-        .name(registry.original.name().to_string())
-        .reference(registry.original.clone())
-        .digest(digest.to_string())
-        .layers(layers)
-        .build()
-        .pipe(Ok)
+        .context("apply layers")
+        .map(|layers| layers.into_iter().flatten().collect::<Vec<_>>())
 }
 
 async fn squash(
-    registry: &Registry,
-    output: &PathBuf,
+    registry: &impl Source,
+    output: &Path,
     layers: &[Layer],
 ) -> Result<Vec<(Digest, PathBuf)>> {
     let target = target_dir(output, layers).context("target dir")?;
@@ -124,8 +106,8 @@ async fn squash(
 }
 
 async fn copy(
-    registry: &Registry,
-    output: &PathBuf,
+    registry: &impl Source,
+    output: &Path,
     layer: Layer,
 ) -> Result<Vec<(Digest, PathBuf)>> {
     let target = target_dir(output, [&layer]).context("target dir")?;

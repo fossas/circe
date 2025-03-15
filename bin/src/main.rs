@@ -1,3 +1,8 @@
+#![deny(clippy::uninlined_format_args)]
+#![deny(clippy::unwrap_used)]
+#![deny(unsafe_code)]
+#![warn(rust_2018_idioms)]
+
 use clap::{
     builder::{styling::AnsiColor, Styles},
     Parser,
@@ -94,4 +99,20 @@ fn style() -> Styles {
         .error(AnsiColor::Red.on_default())
         .invalid(AnsiColor::Red.on_default())
         .valid(AnsiColor::Blue.on_default())
+}
+
+/// Try a list of asynchronous strategies in sequence.
+/// The first strategy to succeed stops executing the rest.
+/// If all strategies fail, an error is returned.
+#[macro_export]
+#[doc(hidden)]
+macro_rules! try_strategies {
+    ($opts:expr; $($strategy:expr),*) => {{
+        $(match $strategy(&$opts).await {
+            Ok(()) => return Ok(()),
+            Err(err) => tracing::warn!(?err, "strategy failed"),
+        })*
+
+        color_eyre::eyre::bail!("all strategies failed")
+    }}
 }

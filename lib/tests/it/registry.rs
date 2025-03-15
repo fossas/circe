@@ -1,6 +1,6 @@
 use async_tempfile::TempDir;
 use async_walkdir::WalkDir;
-use circe_lib::{registry::Registry, Filters, Platform, Reference};
+use circe_lib::{registry::Registry, Filters, Platform, Reference, Source};
 use color_eyre::Result;
 use simple_test_case::test_case;
 
@@ -43,7 +43,8 @@ async fn pull_layer_filtered(
     let platform = Platform::linux_amd64();
     let reference = Reference::builder()
         .host("cgr.dev")
-        .repository("chainguard/wolfi-base")
+        .namespace("chainguard")
+        .name("wolfi-base")
         .tag("latest")
         .build();
 
