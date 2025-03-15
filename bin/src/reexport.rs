@@ -12,7 +12,7 @@ use pluralizer::pluralize;
 use std::{path::PathBuf, str::FromStr};
 use tap::Pipe;
 use tokio_tar::Builder;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{extract::Target, try_strategies};
 
