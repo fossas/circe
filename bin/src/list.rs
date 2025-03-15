@@ -26,6 +26,11 @@ pub async fn main(opts: Options) -> Result<()> {
 }
 
 async fn strategy_registry(opts: &Options) -> Result<()> {
+    if opts.target.is_path() {
+        debug!("input appears to be a file path, skipping strategy");
+        return Ok(());
+    }
+
     let reference = Reference::from_str(&opts.target.image)?;
     let auth = match (&opts.target.username, &opts.target.password) {
         (Some(username), Some(password)) => Authentication::basic(username, password),
@@ -44,6 +49,11 @@ async fn strategy_registry(opts: &Options) -> Result<()> {
 }
 
 async fn strategy_daemon(opts: &Options) -> Result<()> {
+    if opts.target.is_path() {
+        debug!("input appears to be a file path, skipping strategy");
+        return Ok(());
+    }
+
     let daemon = Daemon::builder()
         .reference(&opts.target.image)
         .build()

@@ -34,6 +34,11 @@ pub async fn main(opts: Options) -> Result<()> {
 }
 
 async fn strategy_registry(opts: &Options) -> Result<()> {
+    if opts.target.is_path() {
+        debug!("input appears to be a file path, skipping strategy");
+        return Ok(());
+    }
+
     let reference = Reference::from_str(&opts.target.image)?;
     let auth = match (&opts.target.username, &opts.target.password) {
         (Some(username), Some(password)) => Authentication::basic(username, password),
@@ -55,6 +60,11 @@ async fn strategy_registry(opts: &Options) -> Result<()> {
 }
 
 async fn strategy_daemon(opts: &Options) -> Result<()> {
+    if opts.target.is_path() {
+        debug!("input appears to be a file path, skipping strategy");
+        return Ok(());
+    }
+
     let tag = opts.target.image.clone();
     let daemon = Daemon::builder()
         .reference(&tag)
@@ -79,6 +89,8 @@ async fn strategy_tarball(opts: &Options) -> Result<()> {
         .map(|name| name.to_string_lossy())
         .unwrap_or_else(|| opts.target.image.clone().into())
         .to_string();
+
+    tracing::info!(path = %path.display(), name = %name, "using local tarball");
     let tarball = Tarball::builder()
         .path(path)
         .name(&name)
@@ -89,7 +101,7 @@ async fn strategy_tarball(opts: &Options) -> Result<()> {
     let digest = tarball.digest().await.context("get image digest")?.as_hex();
     let tag = format!("{name}:{digest}");
 
-    tracing::info!("using local tarball");
+    tracing::info!(tag = %tag, "created tag for reexport");
     reexport(opts, tag, tarball)
         .await
         .context("reexporting image")

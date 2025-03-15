@@ -133,6 +133,13 @@ pub struct Target {
     pub password: Option<String>,
 }
 
+impl Target {
+    /// Check if the image appears to be a path
+    pub fn is_path(&self) -> bool {
+        self.image.starts_with('/') || self.image.starts_with("./") || self.image.starts_with("../")
+    }
+}
+
 #[derive(Copy, Clone, Debug, Default, ValueEnum)]
 pub enum Mode {
     /// Squash all layers into a single output directory, resulting in a file system equivalent to a running container.
@@ -159,6 +166,11 @@ pub async fn main(opts: Options) -> Result<()> {
 }
 
 async fn strategy_registry(opts: &Options) -> Result<()> {
+    if opts.target.is_path() {
+        debug!("input appears to be a file path, skipping strategy");
+        return Ok(());
+    }
+
     let reference = Reference::from_str(&opts.target.image)?;
     let layer_globs = Filters::parse_glob(opts.layer_glob.iter().flatten())?;
     let file_globs = Filters::parse_glob(opts.file_glob.iter().flatten())?;
@@ -185,6 +197,11 @@ async fn strategy_registry(opts: &Options) -> Result<()> {
 }
 
 async fn strategy_daemon(opts: &Options) -> Result<()> {
+    if opts.target.is_path() {
+        debug!("input appears to be a file path, skipping strategy");
+        return Ok(());
+    }
+
     let layer_globs = Filters::parse_glob(opts.layer_glob.iter().flatten())?;
     let file_globs = Filters::parse_glob(opts.file_glob.iter().flatten())?;
     let layer_regexes = Filters::parse_regex(opts.layer_regex.iter().flatten())?;
