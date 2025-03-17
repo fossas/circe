@@ -10,9 +10,9 @@ use crate::{
         self, apply_tarball, collect_json, collect_tmp, enumerate_tarball, extract_file,
         extract_json, file_digest, peel_layer,
     },
-    digest, homedir,
+    homedir,
     transform::Chunk,
-    Authentication, Digest, FilterMatch, Filters, Layer, LayerMediaType, Reference, Source,
+    Authentication, Digest, FilterMatch, Filters, Layer, Reference, Source,
 };
 use async_tempfile::TempFile;
 use base64::Engine;
@@ -660,6 +660,7 @@ async fn digest(tarball: &Path) -> Result<Digest> {
 mod tests {
 
     use super::*;
+    use crate::{digest, Layer, LayerMediaType};
 
     #[test]
     fn parse_docker_manifest_nignx() {

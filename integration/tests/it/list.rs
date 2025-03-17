@@ -8,11 +8,10 @@ use xshell::{Shell, cmd};
     "nginx:latest"
 )]
 #[test_log::test(tokio::test)]
-#[ignore = "this doesn't seem to work in CI, although it works locally"]
-// #[cfg_attr(
-//     not(all(feature = "test-integration", feature = "test-docker-interop")),
-//     ignore = "skipping integration tests that require docker to be installed"
-// )]
+#[cfg_attr(
+    not(all(feature = "test-integration", feature = "test-docker-interop")),
+    ignore = "skipping integration tests that require docker to be installed"
+)]
 async fn daemon(image: &str) -> Result<()> {
     let workspace = crate::workspace_root();
     let temp = assert_fs::TempDir::new().context("create temp dir")?;
@@ -34,11 +33,10 @@ async fn daemon(image: &str) -> Result<()> {
     "nginx:latest"
 )]
 #[test_log::test(tokio::test)]
-#[ignore = "this doesn't seem to work in CI, although it works locally"]
-// #[cfg_attr(
-//     not(all(feature = "test-integration", feature = "test-docker-interop")),
-//     ignore = "skipping integration tests that require docker to be installed"
-// )]
+#[cfg_attr(
+    not(all(feature = "test-integration", feature = "test-docker-interop")),
+    ignore = "skipping integration tests that require docker to be installed"
+)]
 async fn pull_and_save(image: &str) -> Result<()> {
     let workspace = crate::workspace_root();
     let temp = assert_fs::TempDir::new().context("create temp dir")?;
