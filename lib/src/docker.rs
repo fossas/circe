@@ -10,9 +10,9 @@ use crate::{
         self, apply_tarball, collect_json, collect_tmp, enumerate_tarball, extract_file,
         extract_json, file_digest, peel_layer,
     },
-    homedir,
+    digest, homedir,
     transform::Chunk,
-    Authentication, Digest, FilterMatch, Filters, Layer, Reference, Source,
+    Authentication, Digest, FilterMatch, Filters, Layer, LayerMediaType, Reference, Source,
 };
 use async_tempfile::TempFile;
 use base64::Engine;
@@ -405,7 +405,7 @@ impl Tarball {
 }
 
 /// A Docker OCI manifest.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DockerManifest {
     /// The layers in the manifest.
@@ -654,4 +654,72 @@ async fn digest(tarball: &Path) -> Result<Digest> {
     }
 
     file_digest(tarball).await
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn parse_docker_manifest_nignx() {
+        let content = include_str!("./testdata/nginx_manifest.json");
+
+        let expected = DockerManifest {
+            layers: vec![
+                Layer {
+                    digest: digest!(
+                        "5f1ee22ffb5e68686db3dcb6584eb1c73b5570615b0f14fabb070b96117e351d"
+                    ),
+                    size: 77844480,
+                    media_type: LayerMediaType::default(),
+                },
+                Layer {
+                    digest: digest!(
+                        "c68632c455ae0c46d1380033bae6d30014853fa3f600f4e14efc440be1bc9580"
+                    ),
+                    size: 118268416,
+                    media_type: LayerMediaType::default(),
+                },
+                Layer {
+                    digest: digest!(
+                        "cabea05c000e49f0814b2611cbc66c2787f609d8a27fc7b9e97b5dab5d8502da"
+                    ),
+                    size: 3584,
+                    media_type: LayerMediaType::default(),
+                },
+                Layer {
+                    digest: digest!(
+                        "791f0a07985c2814a899cb0458802be06ba124a364f7e5a9413a1f08fdbf5b5c"
+                    ),
+                    size: 4608,
+                    media_type: LayerMediaType::default(),
+                },
+                Layer {
+                    digest: digest!(
+                        "f6d5815f290ee912fd4a768d97b46af39523dff584d786f5c0f7e9bdb7fad537"
+                    ),
+                    size: 2560,
+                    media_type: LayerMediaType::default(),
+                },
+                Layer {
+                    digest: digest!(
+                        "7d22e2347c1217a89bd3c79ca9adb4652c1e9b61427fffc0ab92227aacd19a38"
+                    ),
+                    size: 5120,
+                    media_type: LayerMediaType::default(),
+                },
+                Layer {
+                    digest: digest!(
+                        "55e9644f21c38d7707b4a432aacc7817c5414b68ac7a750e704c2f7100ebc15c"
+                    ),
+                    size: 7168,
+                    media_type: LayerMediaType::default(),
+                },
+            ],
+        };
+
+        let manifest = serde_json::from_str(content).expect("parse manifest");
+        pretty_assertions::assert_eq!(expected, manifest);
+    }
 }

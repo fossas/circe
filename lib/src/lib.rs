@@ -362,16 +362,16 @@ impl From<&Platform> for Platform {
 #[macro_export]
 macro_rules! digest {
     ($hex:expr) => {{
-        circe_lib::digest!(circe_lib::Digest::SHA256, $hex, 32)
+        $crate::digest!($crate::Digest::SHA256, $hex, 32)
     }};
     ($algorithm:expr, $hex:expr) => {{
-        circe_lib::digest!($algorithm, $hex, 32)
+        $crate::digest!($algorithm, $hex, 32)
     }};
     ($algorithm:expr, $hex:expr, $size:expr) => {{
         const HASH: [u8; $size] = hex_magic::hex!($hex);
         static_assertions::const_assert_ne!(HASH.len(), 0);
         static_assertions::const_assert_ne!($algorithm.len(), 0);
-        circe_lib::Digest {
+        $crate::Digest {
             algorithm: $algorithm.to_string(),
             hash: HASH.to_vec(),
         }
@@ -823,6 +823,12 @@ impl LayerMediaType {
     }
 }
 
+impl Default for LayerMediaType {
+    fn default() -> Self {
+        Self::Oci(Vec::new())
+    }
+}
+
 impl FromStr for LayerMediaType {
     type Err = eyre::Error;
 
@@ -911,6 +917,11 @@ pub enum LayerMediaTypeFlag {
 impl LayerMediaTypeFlag {
     /// Parse a string into a set of flags, separated by `+` characters.
     fn parse_set(s: &str) -> Result<Vec<Self>> {
+        let s = s.trim();
+        if s.is_empty() {
+            return Ok(Vec::new());
+        }
+
         s.split('+').map(Self::from_str).try_collect()
     }
 }
@@ -921,7 +932,7 @@ impl FromStr for LayerMediaTypeFlag {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::iter()
             .find(|flag| flag.as_ref() == s)
-            .ok_or_else(|| eyre!("unknown flag: {s}"))
+            .ok_or_else(|| eyre!("unknown flag: '{s}'"))
     }
 }
 
