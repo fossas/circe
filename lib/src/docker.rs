@@ -663,7 +663,7 @@ mod tests {
     use crate::{digest, Layer, LayerMediaType};
 
     #[test]
-    fn parse_docker_manifest_nignx() {
+    fn parse_docker_manifest_nginx() {
         let content = include_str!("./testdata/nginx_manifest.json");
 
         let expected = DockerManifest {
