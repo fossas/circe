@@ -10,7 +10,7 @@ use pluralizer::pluralize;
 use std::{collections::HashMap, path::PathBuf, str::FromStr};
 use tracing::{debug, info};
 
-use crate::{extract::Target, try_strategies};
+use crate::{extract::Target, try_strategies, Outcome};
 
 #[derive(Debug, Parser)]
 pub struct Options {
@@ -25,10 +25,10 @@ pub async fn main(opts: Options) -> Result<()> {
     try_strategies!(&opts; strategy_tarball, strategy_daemon, strategy_registry)
 }
 
-async fn strategy_registry(opts: &Options) -> Result<()> {
+async fn strategy_registry(opts: &Options) -> Result<Outcome> {
     if opts.target.is_path() {
         debug!("input appears to be a file path, skipping strategy");
-        return Ok(());
+        return Ok(Outcome::Skipped);
     }
 
     let reference = Reference::from_str(&opts.target.image)?;
@@ -45,13 +45,16 @@ async fn strategy_registry(opts: &Options) -> Result<()> {
         .await
         .context("configure remote registry")?;
 
-    list_files(registry).await.context("list files")
+    list_files(registry)
+        .await
+        .context("list files")
+        .map(|_| Outcome::Success)
 }
 
-async fn strategy_daemon(opts: &Options) -> Result<()> {
+async fn strategy_daemon(opts: &Options) -> Result<Outcome> {
     if opts.target.is_path() {
         debug!("input appears to be a file path, skipping strategy");
-        return Ok(());
+        return Ok(Outcome::Skipped);
     }
 
     let daemon = Daemon::builder()
@@ -61,10 +64,13 @@ async fn strategy_daemon(opts: &Options) -> Result<()> {
         .context("build daemon reference")?;
 
     tracing::info!("pulled image from daemon");
-    list_files(daemon).await.context("list files")
+    list_files(daemon)
+        .await
+        .context("list files")
+        .map(|_| Outcome::Success)
 }
 
-async fn strategy_tarball(opts: &Options) -> Result<()> {
+async fn strategy_tarball(opts: &Options) -> Result<Outcome> {
     let path = PathBuf::from(&opts.target.image);
     if matches!(tokio::fs::try_exists(&path).await, Err(_) | Ok(false)) {
         bail!("path does not exist: {path:?}");
@@ -83,7 +89,10 @@ async fn strategy_tarball(opts: &Options) -> Result<()> {
         .context("build tarball reference")?;
 
     tracing::info!("listing files in tarball");
-    list_files(tarball).await.context("list files")
+    list_files(tarball)
+        .await
+        .context("list files")
+        .map(|_| Outcome::Success)
 }
 
 #[tracing::instrument]

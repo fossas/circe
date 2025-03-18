@@ -102,17 +102,25 @@ fn style() -> Styles {
 }
 
 /// Try a list of asynchronous strategies in sequence.
-/// The first strategy to succeed stops executing the rest.
+/// The first strategy to succeed with [`Outcome::Success`] stops executing the rest.
 /// If all strategies fail, an error is returned.
 #[macro_export]
 #[doc(hidden)]
 macro_rules! try_strategies {
     ($opts:expr; $($strategy:expr),*) => {{
         $(match $strategy(&$opts).await {
-            Ok(()) => return Ok(()),
+            Ok($crate::Outcome::Success) => return Ok(()),
+            Ok($crate::Outcome::Skipped) => {},
             Err(err) => tracing::warn!(?err, "strategy failed"),
         })*
 
         color_eyre::eyre::bail!("all strategies failed")
     }}
+}
+
+/// The result of executing a strategy.
+/// When executing multiple strategies, the first successful one stops the sequence.
+pub enum Outcome {
+    Success,
+    Skipped,
 }
