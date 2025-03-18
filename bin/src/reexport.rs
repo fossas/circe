@@ -34,7 +34,7 @@ pub async fn main(opts: Options) -> Result<()> {
 }
 
 async fn strategy_registry(opts: &Options) -> Result<Outcome> {
-    if opts.target.is_path() {
+    if opts.target.is_path().await {
         debug!("input appears to be a file path, skipping strategy");
         return Ok(Outcome::Skipped);
     }
@@ -61,7 +61,7 @@ async fn strategy_registry(opts: &Options) -> Result<Outcome> {
 }
 
 async fn strategy_daemon(opts: &Options) -> Result<Outcome> {
-    if opts.target.is_path() {
+    if opts.target.is_path().await {
         debug!("input appears to be a file path, skipping strategy");
         return Ok(Outcome::Skipped);
     }

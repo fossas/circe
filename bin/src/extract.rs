@@ -83,6 +83,30 @@ pub struct Options {
     file_regex: Option<Vec<String>>,
 }
 
+impl Options {
+    /// Combined filters for layers.
+    pub fn layer_filters(&self) -> Result<Filters> {
+        let layer_globs = Filters::parse_glob(self.layer_glob.iter().flatten())?;
+        let layer_regexes = Filters::parse_regex(self.layer_regex.iter().flatten())?;
+        Ok(layer_globs + layer_regexes)
+    }
+
+    /// Combined filters for files.
+    pub fn file_filters(&self) -> Result<Filters> {
+        let file_globs = Filters::parse_glob(self.file_glob.iter().flatten())?;
+        let file_regexes = Filters::parse_regex(self.file_regex.iter().flatten())?;
+        Ok(file_globs + file_regexes)
+    }
+
+    /// Registry authentication.
+    pub async fn auth(&self, reference: &Reference) -> Result<Authentication> {
+        Ok(match (&self.target.username, &self.target.password) {
+            (Some(username), Some(password)) => Authentication::basic(username, password),
+            _ => Authentication::docker(reference).await?,
+        })
+    }
+}
+
 /// Shared options for any command that needs to work with the OCI registry for a given image.
 #[derive(Debug, Args)]
 pub struct Target {
@@ -134,9 +158,18 @@ pub struct Target {
 }
 
 impl Target {
-    /// Check if the image appears to be a path
-    pub fn is_path(&self) -> bool {
-        self.image.starts_with('/') || self.image.starts_with("./") || self.image.starts_with("../")
+    /// Check if the image appears to be a path.
+    /// The validation is performed simply by attempting to canonicalize the path, then checking if a file exists.
+    /// If either operation fails or the file does not exist, the image is not considered a path.
+    pub async fn is_path(&self) -> bool {
+        // We could make this nicer with `futures::future::AndThen`, but we don't currently import `futures`.
+        match tokio::fs::canonicalize(&self.image).await {
+            Ok(path) => match tokio::fs::try_exists(path).await {
+                Ok(exists) => exists,
+                Err(_) => false,
+            },
+            Err(_) => false,
+        }
     }
 }
 
@@ -166,27 +199,22 @@ pub async fn main(opts: Options) -> Result<()> {
 }
 
 async fn strategy_registry(opts: &Options) -> Result<Outcome> {
-    if opts.target.is_path() {
+    if opts.target.is_path().await {
         debug!("input appears to be a file path, skipping strategy");
         return Ok(Outcome::Skipped);
     }
 
     let reference = Reference::from_str(&opts.target.image)?;
-    let layer_globs = Filters::parse_glob(opts.layer_glob.iter().flatten())?;
-    let file_globs = Filters::parse_glob(opts.file_glob.iter().flatten())?;
-    let layer_regexes = Filters::parse_regex(opts.layer_regex.iter().flatten())?;
-    let file_regexes = Filters::parse_regex(opts.file_regex.iter().flatten())?;
-    let auth = match (&opts.target.username, &opts.target.password) {
-        (Some(username), Some(password)) => Authentication::basic(username, password),
-        _ => Authentication::docker(&reference).await?,
-    };
+    let layer_filters = opts.layer_filters()?;
+    let file_filters = opts.file_filters()?;
+    let auth = opts.auth(&reference).await?;
 
     let registry = Registry::builder()
         .maybe_platform(opts.target.platform.as_ref())
         .reference(reference)
         .auth(auth)
-        .layer_filters(layer_globs + layer_regexes)
-        .file_filters(file_globs + file_regexes)
+        .layer_filters(layer_filters)
+        .file_filters(file_filters)
         .build()
         .await
         .context("configure remote registry")?;
@@ -198,20 +226,17 @@ async fn strategy_registry(opts: &Options) -> Result<Outcome> {
 }
 
 async fn strategy_daemon(opts: &Options) -> Result<Outcome> {
-    if opts.target.is_path() {
+    if opts.target.is_path().await {
         debug!("input appears to be a file path, skipping strategy");
         return Ok(Outcome::Skipped);
     }
 
-    let layer_globs = Filters::parse_glob(opts.layer_glob.iter().flatten())?;
-    let file_globs = Filters::parse_glob(opts.file_glob.iter().flatten())?;
-    let layer_regexes = Filters::parse_regex(opts.layer_regex.iter().flatten())?;
-    let file_regexes = Filters::parse_regex(opts.file_regex.iter().flatten())?;
-
+    let layer_filters = opts.layer_filters()?;
+    let file_filters = opts.file_filters()?;
     let daemon = Daemon::builder()
         .reference(&opts.target.image)
-        .layer_filters(layer_globs + layer_regexes)
-        .file_filters(file_globs + file_regexes)
+        .layer_filters(layer_filters)
+        .file_filters(file_filters)
         .build()
         .await
         .context("build daemon reference")?;
@@ -229,10 +254,8 @@ async fn strategy_tarball(opts: &Options) -> Result<Outcome> {
         bail!("path does not exist: {path:?}");
     }
 
-    let layer_globs = Filters::parse_glob(opts.layer_glob.iter().flatten())?;
-    let file_globs = Filters::parse_glob(opts.file_glob.iter().flatten())?;
-    let layer_regexes = Filters::parse_regex(opts.layer_regex.iter().flatten())?;
-    let file_regexes = Filters::parse_regex(opts.file_regex.iter().flatten())?;
+    let layer_filters = opts.layer_filters()?;
+    let file_filters = opts.file_filters()?;
     let name = path
         .file_name()
         .map(|name| name.to_string_lossy())
@@ -242,8 +265,8 @@ async fn strategy_tarball(opts: &Options) -> Result<Outcome> {
     let tarball = Tarball::builder()
         .path(path)
         .name(name)
-        .file_filters(file_globs + file_regexes)
-        .layer_filters(layer_globs + layer_regexes)
+        .file_filters(file_filters)
+        .layer_filters(layer_filters)
         .build()
         .await
         .context("build tarball reference")?;
