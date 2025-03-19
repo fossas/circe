@@ -1,5 +1,5 @@
 use async_tempfile::TempDir;
-use circe_lib::{registry::Registry, Authentication, Reference};
+use circe_lib::{registry::Registry, Authentication, Reference, Source};
 use color_eyre::Result;
 use simple_test_case::test_case;
 

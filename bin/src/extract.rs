@@ -1,13 +1,16 @@
 use circe_lib::{
-    extract::{extract, Strategy},
+    docker::{Daemon, Tarball},
+    extract::{extract, Report, Strategy},
     registry::Registry,
-    Authentication, Filters, Platform, Reference,
+    Authentication, Filters, Platform, Reference, Source,
 };
 use clap::{Args, Parser, ValueEnum};
 use color_eyre::eyre::{bail, Context, Result};
 use derive_more::Debug;
 use std::{path::PathBuf, str::FromStr};
 use tracing::{debug, info};
+
+use crate::{try_strategies, Outcome};
 
 #[derive(Debug, Parser)]
 pub struct Options {
@@ -80,6 +83,30 @@ pub struct Options {
     file_regex: Option<Vec<String>>,
 }
 
+impl Options {
+    /// Combined filters for layers.
+    pub fn layer_filters(&self) -> Result<Filters> {
+        let layer_globs = Filters::parse_glob(self.layer_glob.iter().flatten())?;
+        let layer_regexes = Filters::parse_regex(self.layer_regex.iter().flatten())?;
+        Ok(layer_globs + layer_regexes)
+    }
+
+    /// Combined filters for files.
+    pub fn file_filters(&self) -> Result<Filters> {
+        let file_globs = Filters::parse_glob(self.file_glob.iter().flatten())?;
+        let file_regexes = Filters::parse_regex(self.file_regex.iter().flatten())?;
+        Ok(file_globs + file_regexes)
+    }
+
+    /// Registry authentication.
+    pub async fn auth(&self, reference: &Reference) -> Result<Authentication> {
+        Ok(match (&self.target.username, &self.target.password) {
+            (Some(username), Some(password)) => Authentication::basic(username, password),
+            _ => Authentication::docker(reference).await?,
+        })
+    }
+}
+
 /// Shared options for any command that needs to work with the OCI registry for a given image.
 #[derive(Debug, Args)]
 pub struct Target {
@@ -130,6 +157,22 @@ pub struct Target {
     pub password: Option<String>,
 }
 
+impl Target {
+    /// Check if the image appears to be a path.
+    /// The validation is performed simply by attempting to canonicalize the path, then checking if a file exists.
+    /// If either operation fails or the file does not exist, the image is not considered a path.
+    pub async fn is_path(&self) -> bool {
+        // We could make this nicer with `futures::future::AndThen`, but we don't currently import `futures`.
+        match tokio::fs::canonicalize(&self.image).await {
+            Ok(path) => match tokio::fs::try_exists(path).await {
+                Ok(exists) => exists,
+                Err(_) => false,
+            },
+            Err(_) => false,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, Default, ValueEnum)]
 pub enum Mode {
     /// Squash all layers into a single output directory, resulting in a file system equivalent to a running container.
@@ -152,28 +195,91 @@ pub enum Mode {
 #[tracing::instrument]
 pub async fn main(opts: Options) -> Result<()> {
     info!("extracting image");
+    try_strategies!(&opts; strategy_tarball, strategy_daemon, strategy_registry)
+}
+
+async fn strategy_registry(opts: &Options) -> Result<Outcome> {
+    if opts.target.is_path().await {
+        debug!("input appears to be a file path, skipping strategy");
+        return Ok(Outcome::Skipped);
+    }
 
     let reference = Reference::from_str(&opts.target.image)?;
-    let layer_globs = Filters::parse_glob(opts.layer_glob.into_iter().flatten())?;
-    let file_globs = Filters::parse_glob(opts.file_glob.into_iter().flatten())?;
-    let layer_regexes = Filters::parse_regex(opts.layer_regex.into_iter().flatten())?;
-    let file_regexes = Filters::parse_regex(opts.file_regex.into_iter().flatten())?;
-    let auth = match (opts.target.username, opts.target.password) {
-        (Some(username), Some(password)) => Authentication::basic(username, password),
-        _ => Authentication::docker(&reference).await?,
-    };
+    let layer_filters = opts.layer_filters()?;
+    let file_filters = opts.file_filters()?;
+    let auth = opts.auth(&reference).await?;
 
-    let output = canonicalize_output_dir(&opts.output_dir, opts.overwrite)?;
     let registry = Registry::builder()
-        .maybe_platform(opts.target.platform)
+        .maybe_platform(opts.target.platform.as_ref())
         .reference(reference)
         .auth(auth)
-        .layer_filters(layer_globs + layer_regexes)
-        .file_filters(file_globs + file_regexes)
+        .layer_filters(layer_filters)
+        .file_filters(file_filters)
         .build()
         .await
         .context("configure remote registry")?;
 
+    extract_layers(opts, registry)
+        .await
+        .context("extract layers")
+        .map(|_| Outcome::Success)
+}
+
+async fn strategy_daemon(opts: &Options) -> Result<Outcome> {
+    if opts.target.is_path().await {
+        debug!("input appears to be a file path, skipping strategy");
+        return Ok(Outcome::Skipped);
+    }
+
+    let layer_filters = opts.layer_filters()?;
+    let file_filters = opts.file_filters()?;
+    let daemon = Daemon::builder()
+        .reference(&opts.target.image)
+        .layer_filters(layer_filters)
+        .file_filters(file_filters)
+        .build()
+        .await
+        .context("build daemon reference")?;
+
+    tracing::info!("pulled image from daemon");
+    extract_layers(opts, daemon)
+        .await
+        .context("extract layers")
+        .map(|_| Outcome::Success)
+}
+
+async fn strategy_tarball(opts: &Options) -> Result<Outcome> {
+    let path = PathBuf::from(&opts.target.image);
+    if matches!(tokio::fs::try_exists(&path).await, Err(_) | Ok(false)) {
+        bail!("path does not exist: {path:?}");
+    }
+
+    let layer_filters = opts.layer_filters()?;
+    let file_filters = opts.file_filters()?;
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy())
+        .unwrap_or_else(|| opts.target.image.clone().into())
+        .to_string();
+
+    let tarball = Tarball::builder()
+        .path(path)
+        .name(name)
+        .file_filters(file_filters)
+        .layer_filters(layer_filters)
+        .build()
+        .await
+        .context("build tarball reference")?;
+
+    tracing::info!("extracting layers from tarball");
+    extract_layers(opts, tarball)
+        .await
+        .context("extract layers")
+        .map(|_| Outcome::Success)
+}
+
+#[tracing::instrument]
+async fn extract_layers(opts: &Options, registry: impl Source) -> Result<()> {
     let layers = registry.layers().await.context("list layers")?;
     if layers.is_empty() {
         bail!("no layers to extract found in image");
@@ -194,9 +300,16 @@ pub async fn main(opts: Options) -> Result<()> {
         },
     };
 
-    let report = extract(&registry, &output, strategies)
+    let output = canonicalize_output_dir(&opts.output_dir, opts.overwrite)?;
+    let digest = registry.digest().await.context("fetch digest")?;
+    let layers = extract(&registry, &output, strategies)
         .await
         .context("extract image")?;
+
+    let report = Report::builder()
+        .digest(digest.to_string())
+        .layers(layers)
+        .build();
 
     report
         .write(&output)
@@ -204,6 +317,7 @@ pub async fn main(opts: Options) -> Result<()> {
         .context("write report to disk")?;
 
     println!("{}", report.render()?);
+
     Ok(())
 }
 

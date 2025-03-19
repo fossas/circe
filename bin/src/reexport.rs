@@ -1,19 +1,20 @@
 use async_tempfile::TempFile;
 use circe_lib::{
+    docker::{Daemon, Tarball},
     fossacli::{Image, Manifest, ManifestEntry, RootFs},
     registry::Registry,
-    Authentication, Digest, Reference,
+    Authentication, Digest, Reference, Source,
 };
 use clap::Parser;
-use color_eyre::eyre::{Context, Result};
+use color_eyre::eyre::{bail, Context, Result};
 use derive_more::Debug;
 use pluralizer::pluralize;
-use std::str::FromStr;
+use std::{path::PathBuf, str::FromStr};
 use tap::Pipe;
 use tokio_tar::Builder;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
-use crate::extract::Target;
+use crate::{extract::Target, try_strategies, Outcome};
 
 #[derive(Debug, Parser)]
 pub struct Options {
@@ -29,21 +30,88 @@ pub struct Options {
 #[tracing::instrument]
 pub async fn main(opts: Options) -> Result<()> {
     info!("re-exporting image for FOSSA CLI");
+    try_strategies!(&opts; strategy_tarball, strategy_daemon, strategy_registry)
+}
+
+async fn strategy_registry(opts: &Options) -> Result<Outcome> {
+    if opts.target.is_path().await {
+        debug!("input appears to be a file path, skipping strategy");
+        return Ok(Outcome::Skipped);
+    }
 
     let reference = Reference::from_str(&opts.target.image)?;
-    let auth = match (opts.target.username, opts.target.password) {
+    let auth = match (&opts.target.username, &opts.target.password) {
         (Some(username), Some(password)) => Authentication::basic(username, password),
         _ => Authentication::docker(&reference).await?,
     };
 
+    let tag = format!("{}:{}", reference.name, reference.version);
     let registry = Registry::builder()
-        .maybe_platform(opts.target.platform)
+        .maybe_platform(opts.target.platform.as_ref())
         .reference(reference.clone())
         .auth(auth)
         .build()
         .await
         .context("configure remote registry")?;
 
+    reexport(opts, tag, registry)
+        .await
+        .context("reexporting image")
+        .map(|_| Outcome::Success)
+}
+
+async fn strategy_daemon(opts: &Options) -> Result<Outcome> {
+    if opts.target.is_path().await {
+        debug!("input appears to be a file path, skipping strategy");
+        return Ok(Outcome::Skipped);
+    }
+
+    let tag = opts.target.image.clone();
+    let daemon = Daemon::builder()
+        .reference(&tag)
+        .build()
+        .await
+        .context("build daemon reference")?;
+
+    tracing::info!("pulled image from daemon");
+    reexport(opts, tag, daemon)
+        .await
+        .context("reexporting image")
+        .map(|_| Outcome::Success)
+}
+
+async fn strategy_tarball(opts: &Options) -> Result<Outcome> {
+    let path = PathBuf::from(&opts.target.image);
+    if matches!(tokio::fs::try_exists(&path).await, Err(_) | Ok(false)) {
+        bail!("path does not exist: {path:?}");
+    }
+
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy())
+        .unwrap_or_else(|| opts.target.image.clone().into())
+        .to_string();
+
+    tracing::info!(path = %path.display(), name = %name, "using local tarball");
+    let tarball = Tarball::builder()
+        .path(path)
+        .name(&name)
+        .build()
+        .await
+        .context("build tarball reference")?;
+
+    let digest = tarball.digest().await.context("get image digest")?.as_hex();
+    let tag = format!("{name}:{digest}");
+
+    tracing::info!(tag = %tag, "created tag for reexport");
+    reexport(opts, tag, tarball)
+        .await
+        .context("reexporting image")
+        .map(|_| Outcome::Success)
+}
+
+#[tracing::instrument]
+async fn reexport(opts: &Options, tag: String, registry: impl Source) -> Result<()> {
     let layers = registry.layers().await.context("list layers")?;
     let count = layers.len();
     info!("enumerated {}", pluralize("layer", count as isize, true));
@@ -72,16 +140,14 @@ pub async fn main(opts: Options) -> Result<()> {
     //
     // It then builds a representation of the image based on the combination of these two files:
     // - https://github.com/fossas/fossa-cli/blob/65046d8b1935a2693e6f30869afbc2efb868352e/src/Container/Tarball.hs#L74
-
-    let digest = registry.digest().await.context("get image digest")?;
-    let tag = format!("{}:{}", reference.name(), reference.version);
-
+    //
     // It's a lot less error prone to use the disk as working state for the tarball we create:
     // the `tokio-tar` library automatically creates a lot of metadata for us if it can use an on-disk artifact
     // which we'd otherwise be stuck recreating.
     //
     // While this comes at the cost of a little more IO (we're indirecting through the disk)
     // I think this is worth the cost unless it demonstrates to the contrary..
+    let digest = registry.digest().await.context("get image digest")?;
     let tarball = TempFile::new().await.context("create tarball")?;
     let mut tarball = Builder::new(tarball);
     let mut written = Vec::new();

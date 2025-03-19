@@ -1,6 +1,11 @@
-//! Core library for `circe`, a tool for extracting OCI images.
+#![deny(clippy::uninlined_format_args)]
+#![deny(clippy::unwrap_used)]
+#![deny(unsafe_code)]
+#![warn(rust_2018_idioms)]
 
+use async_tempfile::TempFile;
 use bon::Builder;
+use bytes::Bytes;
 use color_eyre::{
     eyre::{self, bail, ensure, eyre, Context},
     Result, Section, SectionExt,
@@ -8,14 +13,23 @@ use color_eyre::{
 use derive_more::derive::{Debug, Display, From};
 use enum_assoc::Assoc;
 use extract::Strategy;
+use futures_lite::Stream;
 use itertools::Itertools;
-use serde::{Serialize, Serializer};
-use std::{borrow::Cow, ops::Add, path::PathBuf, str::FromStr};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::{
+    borrow::Cow,
+    future::Future,
+    ops::Add,
+    path::{Path, PathBuf},
+    pin::Pin,
+    str::FromStr,
+};
 use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 use tap::{Pipe, Tap};
 use tracing::{debug, warn};
 
-mod docker;
+mod cio;
+pub mod docker;
 mod ext;
 pub mod extract;
 pub mod fossacli;
@@ -36,6 +50,12 @@ pub const OCI_DEFAULT_BASE: &str = "docker.io";
 /// The default OCI namespace.
 pub const OCI_DEFAULT_NAMESPACE: &str = "library";
 
+/// Set to any value to disable OCI registry connection.
+pub const OCI_DISABLE_REGISTRY_OCI_VAR: &str = "CIRCE_DISABLE_REGISTRY_OCI";
+
+/// Set to any value to disable docker daemon connection.
+pub const OCI_DISABLE_DAEMON_DOCKER_VAR: &str = "CIRCE_DISABLE_DAEMON_DOCKER";
+
 /// The OCI base.
 pub fn oci_base() -> String {
     std::env::var(OCI_BASE_VAR).unwrap_or(OCI_DEFAULT_BASE.to_string())
@@ -44,6 +64,65 @@ pub fn oci_base() -> String {
 /// The OCI namespace.
 pub fn oci_namespace() -> String {
     std::env::var(OCI_NAMESPACE_VAR).unwrap_or(OCI_DEFAULT_NAMESPACE.to_string())
+}
+
+/// Whether OCI registry connection is disabled.
+pub fn flag_disabled_registry_oci() -> Result<()> {
+    if std::env::var(OCI_DISABLE_REGISTRY_OCI_VAR).is_ok() {
+        bail!("{OCI_DISABLE_REGISTRY_OCI_VAR} is set, skipping OCI registry connection");
+    }
+    Ok(())
+}
+
+/// Whether docker daemon connection is disabled.
+pub fn flag_disabled_daemon_docker() -> Result<()> {
+    if std::env::var(OCI_DISABLE_DAEMON_DOCKER_VAR).is_ok() {
+        bail!("{OCI_DISABLE_DAEMON_DOCKER_VAR} is set, skipping docker daemon connection");
+    }
+    Ok(())
+}
+
+/// A trait that abstracts interaction with container images.
+///
+/// This trait provides methods to interact with container images,
+/// whether they're stored in a remote registry or available locally.
+/// Implementations of this trait can be used interchangeably to
+/// work with container images from different sources.
+pub trait Source: std::fmt::Debug {
+    /// Report the digest for the image.
+    fn digest(&self) -> impl Future<Output = Result<Digest>>;
+
+    /// Report the name of the image.
+    fn name(&self) -> impl Future<Output = Result<String>>;
+
+    /// Enumerate layers for a container image.
+    /// Layers are returned in order from the base image to the application.
+    fn layers(&self) -> impl Future<Output = Result<Vec<Layer>>>;
+
+    /// Pull the bytes of a layer from the source in a stream.
+    fn pull_layer(
+        &self,
+        layer: &Layer,
+    ) -> impl Future<Output = Result<Pin<Box<dyn Stream<Item = Result<Bytes>> + Send>>>>;
+
+    /// Enumerate files in a layer.
+    fn list_files(&self, layer: &Layer) -> impl Future<Output = Result<Vec<String>>>;
+
+    /// Apply a layer to a location on disk.
+    ///
+    /// The intention of this method is that when it is run for each layer in an image in order it is equivalent
+    /// to the functionality you'd get by running `docker pull`, `docker save`, and then recursively extracting the
+    /// layers to the same directory.
+    fn apply_layer(&self, layer: &Layer, output: &Path) -> impl Future<Output = Result<()>>;
+
+    /// Normalize an OCI layer into a plain tarball layer.
+    ///
+    /// The intention of this method is that when it is run for each layer in an image in order it is equivalent
+    /// to the functionality you'd get by running `docker pull`, `docker save`, and viewing the patch sets directly.
+    ///
+    /// The twist though is that OCI servers can wrap various kinds of compression around tarballs;
+    /// this method flattens them all down into plain uncompressed `.tar` files.
+    fn layer_plain_tarball(&self, layer: &Layer) -> impl Future<Output = Result<Option<TempFile>>>;
 }
 
 /// Authentication method for a registry.
@@ -248,6 +327,12 @@ impl std::fmt::Display for Platform {
     }
 }
 
+impl From<&Platform> for Platform {
+    fn from(platform: &Platform) -> Self {
+        platform.clone()
+    }
+}
+
 /// Create a [`Digest`] from a hex string at compile time.
 /// ```
 /// let digest = circe_lib::digest!("sha256", "a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4");
@@ -277,16 +362,16 @@ impl std::fmt::Display for Platform {
 #[macro_export]
 macro_rules! digest {
     ($hex:expr) => {{
-        circe_lib::digest!(circe_lib::Digest::SHA256, $hex, 32)
+        $crate::digest!($crate::Digest::SHA256, $hex, 32)
     }};
     ($algorithm:expr, $hex:expr) => {{
-        circe_lib::digest!($algorithm, $hex, 32)
+        $crate::digest!($algorithm, $hex, 32)
     }};
     ($algorithm:expr, $hex:expr, $size:expr) => {{
         const HASH: [u8; $size] = hex_magic::hex!($hex);
         static_assertions::const_assert_ne!(HASH.len(), 0);
         static_assertions::const_assert_ne!($algorithm.len(), 0);
-        circe_lib::Digest {
+        $crate::Digest {
             algorithm: $algorithm.to_string(),
             hash: HASH.to_vec(),
         }
@@ -326,6 +411,22 @@ impl Digest {
     /// Returns the filename to use for a tarball with this digest.
     pub fn tarball_filename(&self) -> String {
         format!("{}.tar", self.as_hex())
+    }
+
+    /// Parse the provided string as a SHA256 hex digest.
+    pub fn from_sha256(s: &str) -> Result<Self> {
+        Ok(Self {
+            algorithm: Self::SHA256.to_string(),
+            hash: hex::decode(s).map_err(|e| eyre!("invalid hex string: {e}"))?,
+        })
+    }
+
+    /// Create a new instance assuming it is sha256 encoded.
+    pub fn from_hash(hash: impl Into<Vec<u8>>) -> Self {
+        Self {
+            algorithm: Self::SHA256.to_string(),
+            hash: hash.into(),
+        }
     }
 }
 
@@ -368,6 +469,16 @@ impl From<&Digest> for Digest {
 impl Serialize for Digest {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.to_string().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Digest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        FromStr::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
 
@@ -440,16 +551,20 @@ impl Version {
     }
 }
 
-/// A parsed container image reference.
+/// A container image reference provided by a user.
 #[derive(Debug, Clone, PartialEq, Eq, Builder, Serialize)]
 pub struct Reference {
     /// Registry host (e.g. "docker.io", "ghcr.io")
     #[builder(into)]
     pub host: String,
 
-    /// Repository name including namespace (e.g. "library/ubuntu", "username/project")
+    /// Repository namespace
     #[builder(into)]
-    pub repository: String,
+    pub namespace: String,
+
+    /// Repository name
+    #[builder(into)]
+    pub name: String,
 
     /// Version identifier, either a tag or SHA digest
     #[builder(into, default = Version::latest())]
@@ -457,12 +572,9 @@ pub struct Reference {
 }
 
 impl Reference {
-    /// The name of the container without the repository.
-    pub fn name(&self) -> &str {
-        self.repository
-            .split('/')
-            .last()
-            .unwrap_or(&self.repository)
+    /// The combined namespace and name, the "repository", of the reference.
+    pub fn repository(&self) -> String {
+        format!("{}/{}", self.namespace, self.name)
     }
 }
 
@@ -564,7 +676,8 @@ impl FromStr for Reference {
 
         Ok(Reference {
             host: host.to_string(),
-            repository: format!("{namespace}/{name}"),
+            namespace: namespace.to_string(),
+            name: name.to_string(),
             version,
         })
     }
@@ -572,17 +685,24 @@ impl FromStr for Reference {
 
 impl std::fmt::Display for Reference {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}", self.host, self.repository)?;
+        write!(f, "{}/{}/{}", self.host, self.namespace, self.name)?;
         match &self.version {
-            Version::Tag(tag) => write!(f, ":{}", tag),
-            Version::Digest(digest) => write!(f, "@{}", digest),
+            Version::Tag(tag) => write!(f, ":{tag}"),
+            Version::Digest(digest) => write!(f, "@{digest}"),
         }
+    }
+}
+
+impl From<&Reference> for Reference {
+    fn from(reference: &Reference) -> Self {
+        reference.clone()
     }
 }
 
 /// A descriptor for a specific layer within an OCI container image.
 /// This follows the OCI Image Spec's layer descriptor format.
-#[derive(Debug, Clone, PartialEq, Eq, Builder)]
+#[derive(Debug, Clone, PartialEq, Eq, Builder, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Layer {
     /// The content-addressable digest of the layer
     #[builder(into)]
@@ -703,6 +823,12 @@ impl LayerMediaType {
     }
 }
 
+impl Default for LayerMediaType {
+    fn default() -> Self {
+        Self::Oci(Vec::new())
+    }
+}
+
 impl FromStr for LayerMediaType {
     type Err = eyre::Error;
 
@@ -730,6 +856,16 @@ impl FromStr for LayerMediaType {
             }
         }
         bail!("unknown media type: {s}");
+    }
+}
+
+impl<'de> Deserialize<'de> for LayerMediaType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        FromStr::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
 
@@ -781,6 +917,11 @@ pub enum LayerMediaTypeFlag {
 impl LayerMediaTypeFlag {
     /// Parse a string into a set of flags, separated by `+` characters.
     fn parse_set(s: &str) -> Result<Vec<Self>> {
+        let s = s.trim();
+        if s.is_empty() {
+            return Ok(Vec::new());
+        }
+
         s.split('+').map(Self::from_str).try_collect()
     }
 }
@@ -791,7 +932,7 @@ impl FromStr for LayerMediaTypeFlag {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::iter()
             .find(|flag| flag.as_ref() == s)
-            .ok_or_else(|| eyre!("unknown flag: {s}"))
+            .ok_or_else(|| eyre!("unknown flag: '{s}'"))
     }
 }
 
@@ -856,7 +997,7 @@ where
     Filter: FilterMatch<&'a T>,
 {
     fn matches(&self, value: &'a T) -> bool {
-        self.0.is_empty() || self.0.iter().any(|filter| filter.matches(value))
+        !self.0.is_empty() && self.0.iter().any(|filter| filter.matches(value))
     }
 }
 
