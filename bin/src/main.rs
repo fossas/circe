@@ -102,8 +102,11 @@ fn style() -> Styles {
 }
 
 /// Try a list of asynchronous strategies in sequence.
+///
 /// The first strategy to succeed with [`Outcome::Success`] stops executing the rest.
-/// If all strategies fail, an error is returned.
+/// If all strategies fail, an error is returned
+///
+/// Note: this macro returns from the calling context, not from the current expression.
 #[macro_export]
 #[doc(hidden)]
 macro_rules! try_strategies {
