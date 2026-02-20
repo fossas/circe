@@ -272,7 +272,7 @@ pub async fn apply_tarball(
         // Otherwise, apply the file as normal.
         // Both _new_ and _changed_ files are handled the same way:
         // the layer contains the entire file content, so we just overwrite the file.
-        if !unwrap_warn!(entry.unpack_in(output).await, continue, "unpack {path:?}") {
+        if unwrap_warn!(entry.unpack_in(output).await, continue, "unpack {path:?}").is_none() {
             warn!(?path, "skip: tried to write outside of output directory");
             continue;
         }
