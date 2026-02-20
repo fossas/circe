@@ -41,7 +41,6 @@ static_assertions = "1.1.0"
 strum = { version = "0.27.0", features = ["derive"] }
 tap = "1.0.1"
 tokio = { version = "1.42.0", features = ["process"] }
-tokio-tar = "0.3.1"
 tokio-util = { version = "0.7.13", features = ["io"] }
 tracing = "0.1.41"
 sha2 = "0.10.8"
@@ -49,6 +48,7 @@ bollard = "0.19.0"
 enum_delegate = "0.2.0"
 enum_dispatch = "0.3.13"
 async-stream = "0.3.6"
+astral-tokio-tar = "0.5.6"
 
 [dev-dependencies]
 async-walkdir = "2.0.0"
