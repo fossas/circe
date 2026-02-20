@@ -74,7 +74,7 @@ jobs:
             # For non-tag builds, use a pre-release version based on the git sha.
             # Must be greater than the version in Cargo.toml to pass validation;
             # bumping the patch version and appending the sha accomplishes this.
-            CURRENT=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name=="ficus") | .version')
+            CURRENT=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name=="circe") | .version')
             MAJOR=$(echo "$CURRENT" | cut -d. -f1)
             MINOR=$(echo "$CURRENT" | cut -d. -f2)
             PATCH=$(echo "$CURRENT" | cut -d. -f3)
