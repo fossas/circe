@@ -71,9 +71,15 @@ jobs:
             VERSION=${GITHUB_REF#refs/tags/v}
             cargo set-version $VERSION
           else
-            # For non-tag builds, use 0.0.0-{git-sha} format
+            # For non-tag builds, use a pre-release version based on the git sha.
+            # Must be greater than the version in Cargo.toml to pass validation;
+            # bumping the patch version and appending the sha accomplishes this.
+            CURRENT=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name=="circe") | .version')
+            MAJOR=$(echo "$CURRENT" | cut -d. -f1)
+            MINOR=$(echo "$CURRENT" | cut -d. -f2)
+            PATCH=$(echo "$CURRENT" | cut -d. -f3)
             GIT_SHA=$(git rev-parse --short HEAD)
-            cargo set-version "0.0.0-${GIT_SHA}"
+            cargo set-version "${MAJOR}.${MINOR}.$((PATCH + 1))-${GIT_SHA}"
           fi
 
       - name: build
